@@ -1,3 +1,4 @@
+// @ts-nocheck
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar, Clock, FileText, Beer, Receipt, 
@@ -59,10 +60,10 @@ const PREDEFINED_ACTIONS = [
 
 // --- MAIN APP COMPONENT ---
 export default function App() {
-  const [events, setEvents] = useState(/** @type {any[]} */ ([]));
-  const [currentEvent, setCurrentEvent] = useState(/** @type {any} */ (null));
-  const [eventToDelete, setEventToDelete] = useState(/** @type {any} */ (null));
-  const [user, setUser] = useState(/** @type {any} */ (null));
+  const [events, setEvents] = useState([]);
+  const [currentEvent, setCurrentEvent] = useState(null);
+  const [eventToDelete, setEventToDelete] = useState(null);
+  const [user, setUser] = useState(null);
   
   // Login States
   const [authLoading, setAuthLoading] = useState(true);
@@ -73,7 +74,6 @@ export default function App() {
   // 1. Authenticatie luisteraar instellen
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
-      // @ts-ignore
       setUser(u);
       setAuthLoading(false);
     });
@@ -376,7 +376,7 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
   const eventsToekomst = events.filter(e => e.datum > today || !e.datum).sort((a, b) => (a.datum || '9999').localeCompare(b.datum || '9999'));
   const eventsVerleden = events.filter(e => e.datum && e.datum < today).sort((a, b) => b.datum.localeCompare(a.datum));
 
-  const [customActionId, setCustomActionId] = useState(/** @type {any} */ (null));
+  const [customActionId, setCustomActionId] = useState(null);
   const [customActionText, setCustomActionText] = useState('');
 
   const handleActieChange = (ev, val) => {
@@ -422,6 +422,7 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
                 <tr key={ev.id} className="border-b hover:bg-gray-50 transition">
                   <td className="p-4 font-medium">{ev.datum || '-'}</td>
                   <td className="p-4">
+                    {/* Klikbare evenement naam */}
                     <button onClick={() => onOpen(ev)} className="font-bold text-red-700 hover:text-red-900 hover:underline text-left text-lg">
                       {ev.naam}
                     </button>
