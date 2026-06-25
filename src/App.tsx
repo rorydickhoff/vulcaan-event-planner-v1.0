@@ -40,6 +40,7 @@ const TABS = {
 const DEFAULT_TURF_ITEMS = [
   { id: 'pils', naam: 'Vulcaan Pils, Wit, Amber', prijs: 4.50, btw: 21, categorie: 'Bier' },
   { id: 'speciaal', naam: 'Vulcaan Speciaalbier', prijs: 5.50, btw: 21, categorie: 'Bier' },
+  { id: 'bier00', naam: '0.0% Bier', prijs: 5.00, btw: 9, categorie: 'Bier' },
   { id: 'wijn', naam: 'Huiswijn', prijs: 4.50, btw: 21, categorie: 'Wijn' },
   { id: 'cava', naam: 'Cava', prijs: 5.50, btw: 21, categorie: 'Wijn' },
   { id: 'gedestilleerd', naam: 'Gedestilleerd', prijs: 6.00, btw: 21, categorie: 'Sterk' },
