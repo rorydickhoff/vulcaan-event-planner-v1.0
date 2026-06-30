@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   Calendar, Clock, FileText, Beer, Receipt, 
   Plus, Trash2, ChevronLeft, Save, CheckCircle, Edit,
-  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut
+  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS (CLOUD DATABASE & AUTH) ---
@@ -1310,6 +1310,10 @@ function TabTurflijst({ data, updateField }) {
   const [newCustomName, setNewCustomName] = useState('');
   const [newCustomPrice, setNewCustomPrice] = useState('');
 
+  // Nieuwe states voor bulk invoer administratie
+  const [bulkItemId, setBulkItemId] = useState('');
+  const [bulkAmount, setBulkAmount] = useState('');
+
   const increment = (id) => {
     updateField(`turflijst.${id}`, (t[id] || 0) + 1);
   };
@@ -1326,7 +1330,7 @@ function TabTurflijst({ data, updateField }) {
     const newItem = {
       id: 'custom_' + Date.now(),
       naam: newCustomName,
-      prijs: inclPrijs, // Opgeslagen als Inclusief BTW
+      prijs: inclPrijs / 1.21, // Opgeslagen als Ex-BTW (standaard 21% aangenomen)
       btw: 21, 
       categorie: 'Extra'
     };
@@ -1334,6 +1338,16 @@ function TabTurflijst({ data, updateField }) {
     updateField('extraTurfItems', [...currentExtras, newItem]);
     setNewCustomName('');
     setNewCustomPrice('');
+  };
+
+  // Functie voor bulk overschrijven
+  const handleBulkUpdate = () => {
+    if (!bulkItemId || bulkAmount === '') return;
+    const amount = parseInt(bulkAmount, 10);
+    if (isNaN(amount) || amount < 0) return;
+    updateField(`turflijst.${bulkItemId}`, amount);
+    setBulkItemId('');
+    setBulkAmount('');
   };
 
   const allItems = [...DEFAULT_TURF_ITEMS, ...(data.extraTurfItems || [])];
@@ -1421,6 +1435,42 @@ function TabTurflijst({ data, updateField }) {
               className="bg-gray-800 text-white px-4 py-2 rounded text-sm hover:bg-gray-900 transition flex items-center justify-center gap-1 font-semibold"
             >
               <Plus size={16} /> <span>Toevoegen</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Administratie: Bulk Invoer */}
+        <div className="mt-8 bg-yellow-50 p-4 rounded-lg shadow print-border border border-yellow-300 print-hidden">
+          <h4 className="font-bold text-yellow-800 mb-2 flex items-center gap-2">
+            <Settings size={18} /> Administratie: Bulk Invoer (Achteraf)
+          </h4>
+          <p className="text-xs text-yellow-700 mb-3">
+            Voer in één keer een groot aantal in voor evenementen die al hebben plaatsgevonden. Het getal dat je hier invult <strong>overschrijft</strong> het huidige aantal.
+          </p>
+          <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2 max-w-3xl">
+            <select 
+              className="border border-yellow-400 rounded p-2 flex-1 outline-none focus:border-yellow-600 text-sm bg-white font-medium"
+              value={bulkItemId}
+              onChange={e => setBulkItemId(e.target.value)}
+            >
+              <option value="">-- Selecteer een drankje / item --</option>
+              {allItems.map(item => (
+                <option key={item.id} value={item.id}>{item.naam}</option>
+              ))}
+            </select>
+            <input 
+              type="number" 
+              placeholder="Nieuw totaal (bijv. 135)" 
+              className="border border-yellow-400 rounded p-2 w-48 outline-none focus:border-yellow-600 text-sm bg-white font-bold text-center"
+              value={bulkAmount}
+              onChange={e => setBulkAmount(e.target.value)}
+            />
+            <button 
+              type="button"
+              onClick={handleBulkUpdate}
+              className="bg-yellow-600 text-white px-6 py-2 rounded text-sm hover:bg-yellow-700 transition flex items-center justify-center gap-2 font-bold shadow-sm"
+            >
+              <Save size={16} /> Toepassen
             </button>
           </div>
         </div>
