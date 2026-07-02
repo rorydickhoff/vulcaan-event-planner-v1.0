@@ -196,7 +196,7 @@ export default function App() {
         todos: [], draaiboek: [], rooster: []
       },
       offerte: [
-        { id: 'o1', dienst: 'Zaalhuur Vulcaan', aantal: 1, uren: 1, tarief: 100.00, btw: 21, inFactuur: true },
+        { id: 'o1', dienst: 'Gebruikskosten Vulcaan', aantal: 1, uren: 1, tarief: 100.00, btw: 21, inFactuur: true },
         { id: 'o2', dienst: 'Personen drankjes*', aantal: 1, uren: 1, tarief: 4.50, btw: 21, inFactuur: false },
         { id: 'o3', dienst: 'Personen tafelgarnituur', aantal: 1, uren: 1, tarief: 2.00, btw: 9, inFactuur: false },
         { id: 'o4', dienst: 'Personen Bittergarnituur', aantal: 1, uren: 1, tarief: 1.00, btw: 9, inFactuur: false },
@@ -1086,7 +1086,7 @@ function TabOfferte({ data, updateField }) {
                     <input type="number" className="w-full border-gray-300 rounded p-1 text-sm text-center" value={row.aantal} onChange={(e) => updateRow(row.id, 'aantal', e.target.value)}/>
                   </td>
                   <td className="p-2">
-                    <input type="text" className="w-full border-gray-300 rounded p-1 text-sm font-medium text-gray-800" value={row.dienst} onChange={(e) => updateRow(row.id, 'dienst', e.target.value)} placeholder="Zaalhuur, bitterballen, etc."/>
+                    <input type="text" className="w-full border-gray-300 rounded p-1 text-sm font-medium text-gray-800" value={row.dienst} onChange={(e) => updateRow(row.id, 'dienst', e.target.value)} placeholder="Gebruikskosten, bitterballen, etc."/>
                   </td>
                   <td className="p-2">
                     <input type="number" className="w-full border-gray-300 rounded p-1 text-sm text-center" value={row.uren} onChange={(e) => updateRow(row.id, 'uren', e.target.value)}/>
