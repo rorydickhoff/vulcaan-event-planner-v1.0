@@ -1847,6 +1847,59 @@ function TabFactuur({ data }) {
     const dateToday = new Date().toISOString().split('T')[0];
     const factuurNummer = `FACTUUR-${data.id.slice(-6)}`;
     const klantNaam = data.briefing.bedrijfsnaam || data.briefing.contactKlant || 'Onbekende Klant';
+    
+    // Voorkom fouten met speciale tekens in XML
+    const escapeXML = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    let invoiceLinesXML = '';
+    let lineID = 1;
+
+    // Hulpfunctie om regels op te bouwen volgens SI-UBL standaard
+    const addLine = (name, quantity, priceIncl, btwPercent) => {
+      const priceExcl = priceIncl / (1 + (btwPercent / 100));
+      const lineTotalExcl = quantity * priceExcl;
+      
+      invoiceLinesXML += `
+  <cac:InvoiceLine>
+    <cbc:ID>${lineID++}</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="C62">${quantity}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">${lineTotalExcl.toFixed(2)}</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>${escapeXML(name)}</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>${btwPercent === 0 ? 'Z' : 'S'}</cbc:ID>
+        <cbc:Percent>${btwPercent}</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="EUR">${priceExcl.toFixed(2)}</cbc:PriceAmount>
+      <cbc:BaseQuantity unitCode="C62">1</cbc:BaseQuantity>
+    </cac:Price>
+  </cac:InvoiceLine>`;
+    };
+
+    // 1. Voeg Offerte items toe (die aangevinkt zijn voor factuur)
+    const factuurOfferteItems = data.offerte.filter(row => row.inFactuur !== false);
+    factuurOfferteItems.forEach(row => {
+      const qty = (Number(row.aantal) || 1) * (Number(row.uren) || 1);
+      addLine(row.dienst, qty, Number(row.tarief), Number(row.btw));
+    });
+
+    // 2. Voeg Turflijst items toe
+    const allTurfItems = [...DEFAULT_TURF_ITEMS, ...(data.extraTurfItems || [])];
+    Object.keys(data.turflijst || {}).forEach(id => {
+      const count = data.turflijst[id];
+      if (count > 0) {
+        const defItem = allTurfItems.find(i => i.id === id);
+        if (defItem) {
+          addLine(defItem.naam, count, defItem.prijs, defItem.btw);
+        }
+      }
+    });
+
+    const exBtw9Bedrag = btw9Bedrag > 0 ? (btw9Bedrag / 0.09) : 0;
+    const exBtw21Bedrag = btw21Bedrag > 0 ? (btw21Bedrag / 0.21) : 0;
 
     const ublString = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
@@ -1876,7 +1929,7 @@ function TabFactuur({ data }) {
   </cac:AccountingSupplierParty>
   <cac:AccountingCustomerParty>
     <cac:Party>
-      <cac:PartyName><cbc:Name>${klantNaam}</cbc:Name></cac:PartyName>
+      <cac:PartyName><cbc:Name>${escapeXML(klantNaam)}</cbc:Name></cac:PartyName>
     </cac:Party>
   </cac:AccountingCustomerParty>
   <cac:PaymentMeans>
@@ -1884,12 +1937,37 @@ function TabFactuur({ data }) {
       <cbc:ID>NL54 ABNA 0124 0244 67</cbc:ID>
     </cac:PayeeFinancialAccount>
   </cac:PaymentMeans>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">${(btw9Bedrag + btw21Bedrag).toFixed(2)}</cbc:TaxAmount>
+    ${btw9Bedrag > 0 ? `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${exBtw9Bedrag.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${btw9Bedrag.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>9</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>` : ''}
+    ${btw21Bedrag > 0 ? `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${exBtw21Bedrag.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${btw21Bedrag.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>21</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>` : ''}
+  </cac:TaxTotal>
   <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="EUR">${totaalEx.toFixed(2)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="EUR">${totaalEx.toFixed(2)}</cbc:TaxExclusiveAmount>
     <cbc:TaxInclusiveAmount currencyID="EUR">${totaalIncl.toFixed(2)}</cbc:TaxInclusiveAmount>
     <cbc:PrepaidAmount currencyID="EUR">${aanbetaling.toFixed(2)}</cbc:PrepaidAmount>
     <cbc:PayableAmount currencyID="EUR">${nogTeVoldoen.toFixed(2)}</cbc:PayableAmount>
   </cac:LegalMonetaryTotal>
+  ${invoiceLinesXML}
 </Invoice>`;
 
     const blob = new Blob([ublString], { type: 'text/xml' });
