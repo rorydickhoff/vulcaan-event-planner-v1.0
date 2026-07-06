@@ -72,6 +72,26 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
+  // WAKE LOCK API (Voorkomt dat iPads in slaapstand gaan)
+  useEffect(() => {
+    let wakeLock = null;
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.log("Wake Lock niet ondersteund of geweigerd", err);
+      }
+    };
+    requestWakeLock();
+    return () => {
+      if (wakeLock !== null) {
+        wakeLock.release();
+      }
+    };
+  }, []);
+
   // 1. Authenticatie luisteraar instellen
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -1794,41 +1814,50 @@ function TabFactuur({ data }) {
     
     const factuurNummer = `FACTUUR-${data.id.slice(-6)}`;
     const klantNaam = data.briefing.bedrijfsnaam || data.briefing.contactKlant || 'Onbekende Klant';
-    const klantEmail = data.briefing.emailKlant || 'info@vulcaanbier.nl';
+    
+    // Zorg voor veilige XML strings ter voorkoming van crashes bij leestekens
+    const escapeXml = (unsafe) => {
+        if(!unsafe) return '';
+        return unsafe.toString().replace(/[<>&'"]/g, function (c) {
+            switch (c) {
+                case '<': return '&lt;';
+                case '>': return '&gt;';
+                case '&': return '&amp;';
+                case '\'': return '&apos;';
+                case '"': return '&quot;';
+                default: return c;
+            }
+        });
+    };
 
     let invoiceLinesXML = '';
     let lineCount = 1;
     let totalLineExtensionAmount = 0;
     
     let taxBasis9 = 0;
-    let taxAmount9 = 0;
     let taxBasis21 = 0;
-    let taxAmount21 = 0;
     let taxBasis0 = 0;
-    let taxAmount0 = 0;
 
     const addLine = (name, quantity, priceIncl, btwPercent) => {
       if (quantity <= 0 || priceIncl <= 0) return;
       
       const btwFactor = 1 + (btwPercent / 100);
-      const lineTotalIncl = quantity * priceIncl;
       
-      // Ex-BTW berekeningen afronden op 2 decimalen volgens administratieve wiskunde
-      const lineTotalEx = Math.round((lineTotalIncl / btwFactor) * 100) / 100;
+      // Peppol wiskunde: Totale regelprijs ex BTW afronden op 2 decimalen
+      const lineTotalEx = Math.round(((quantity * priceIncl) / btwFactor) * 100) / 100;
+      // Stukprijs afgeleid van lineTotalEx, tot 4 decimalen (voorkomt afrondingsfouten bij Exact Online)
       const priceEx = lineTotalEx / quantity; 
-      const lineBtwAmount = lineTotalIncl - lineTotalEx;
 
       totalLineExtensionAmount += lineTotalEx;
 
-      if (btwPercent === 9) { taxBasis9 += lineTotalEx; taxAmount9 += lineBtwAmount; }
-      else if (btwPercent === 21) { taxBasis21 += lineTotalEx; taxAmount21 += lineBtwAmount; }
-      else { taxBasis0 += lineTotalEx; taxAmount0 += lineBtwAmount; }
+      if (btwPercent === 9) { taxBasis9 += lineTotalEx; }
+      else if (btwPercent === 21) { taxBasis21 += lineTotalEx; }
+      else { taxBasis0 += lineTotalEx; }
 
       let taxCategory = 'S';
       if (btwPercent === 0) taxCategory = 'Z';
 
-      // Veilige XML karakters (vervang & door &amp; etc)
-      const safeName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const safeName = escapeXml(name);
 
       invoiceLinesXML += `
   <cac:InvoiceLine>
@@ -1851,13 +1880,13 @@ function TabFactuur({ data }) {
       lineCount++;
     };
 
-    // Voeg Offerte items toe
+    // 1. Voeg Offerte items toe als XML regels
     factuurOfferteItems.forEach(row => {
       const qty = (Number(row.aantal) || 1) * (Number(row.uren) || 1);
       addLine(row.dienst || 'Dienst', qty, Number(row.tarief), Number(row.btw));
     });
 
-    // Voeg Turflijst items toe
+    // 2. Voeg Turflijst items toe als XML regels
     Object.keys(data.turflijst || {}).forEach(id => {
       const count = data.turflijst[id];
       if (count > 0) {
@@ -1868,11 +1897,16 @@ function TabFactuur({ data }) {
       }
     });
     
-    // Voorkom fout BR-16 (bestand zónder regels)
+    // Voorkom fout BR-16 (bestand zónder regels mag niet bestaan in Europa)
     if (lineCount === 1) {
         addLine('Administratieve correctie', 1, 0.01, 21);
     }
 
+    // Afronden van BTW totalen volgens de Peppol BR-CO-15 norm
+    const taxAmount9 = Math.round((taxBasis9 * 0.09) * 100) / 100;
+    const taxAmount21 = Math.round((taxBasis21 * 0.21) * 100) / 100;
+    const taxAmount0 = 0; 
+    
     const totalTaxAmount = taxAmount9 + taxAmount21 + taxAmount0;
     const xmlTaxInclusiveAmount = totalLineExtensionAmount + totalTaxAmount;
     const xmlPayableAmount = xmlTaxInclusiveAmount - aanbetaling;
@@ -1915,7 +1949,7 @@ function TabFactuur({ data }) {
     </cac:TaxSubtotal>`;
     }
     
-    // Voorkom lege tax elementen
+    // Voorkom fout BR-CO-18 (geen tax block aanwezig)
     if (taxSubtotalsXML === '') {
         taxSubtotalsXML += `
     <cac:TaxSubtotal>
@@ -1935,12 +1969,12 @@ function TabFactuur({ data }) {
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
   <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
-  <cbc:ID>${factuurNummer}</cbc:ID>
+  <cbc:ID>${escapeXml(factuurNummer)}</cbc:ID>
   <cbc:IssueDate>${dateToday}</cbc:IssueDate>
   <cbc:DueDate>${dueDateString}</cbc:DueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
-  <cbc:BuyerReference>${data.briefing.referentieNummer || factuurNummer}</cbc:BuyerReference>
+  <cbc:BuyerReference>${escapeXml(data.briefing.referentieNummer || factuurNummer)}</cbc:BuyerReference>
   <cac:AccountingSupplierParty>
     <cac:Party>
       <cbc:EndpointID schemeID="0106">89387260</cbc:EndpointID>
@@ -1963,16 +1997,16 @@ function TabFactuur({ data }) {
   </cac:AccountingSupplierParty>
   <cac:AccountingCustomerParty>
     <cac:Party>
-      <cbc:EndpointID schemeID="EM">${klantEmail}</cbc:EndpointID>
-      <cac:PartyName><cbc:Name>${klantNaam.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</cbc:Name></cac:PartyName>
+      <cbc:EndpointID schemeID="0106">00000000</cbc:EndpointID>
+      <cac:PartyName><cbc:Name>${escapeXml(klantNaam)}</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
-        <cbc:StreetName>${(data.briefing.adresKlant || 'Onbekend').replace(/&/g, '&amp;')}</cbc:StreetName>
-        <cbc:CityName>${(data.briefing.woonplaatsKlant || 'Onbekend').replace(/&/g, '&amp;')}</cbc:CityName>
-        <cbc:PostalZone>${(data.briefing.postcodeKlant || '0000AA').replace(/&/g, '&amp;')}</cbc:PostalZone>
+        <cbc:StreetName>${escapeXml(data.briefing.adresKlant || 'Onbekend')}</cbc:StreetName>
+        <cbc:CityName>${escapeXml(data.briefing.woonplaatsKlant || 'Onbekend')}</cbc:CityName>
+        <cbc:PostalZone>${escapeXml(data.briefing.postcodeKlant || '0000AA')}</cbc:PostalZone>
         <cac:Country><cbc:IdentificationCode>NL</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${klantNaam.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</cbc:RegistrationName>
+        <cbc:RegistrationName>${escapeXml(klantNaam)}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingCustomerParty>
