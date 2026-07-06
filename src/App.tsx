@@ -6,12 +6,10 @@ import {
   Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings, AlertTriangle, RefreshCw, Lock
 } from 'lucide-react';
 
-// --- FIREBASE IMPORTS (CLOUD DATABASE & AUTH) ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
-// --- FIREBASE INITIALIZATIE ---
 const firebaseConfig = {
   apiKey: "AIzaSyCI32rKb-DYb-3uAHOrBiQAfRrzunKl9Xg",
   authDomain: "vulcaan-event-planner.firebaseapp.com",
@@ -27,7 +25,6 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'vulcaan-event-planner';
 
-// --- DATA & CONFIG ---
 const TABS = {
   BRIEFING: 'briefing',
   OFFERTE: 'offerte',
@@ -59,7 +56,6 @@ const PREDEFINED_ACTIONS = [
   "FACTUUR VERSTUREN"
 ];
 
-// --- MAIN APP COMPONENT ---
 export default function App() {
   const [events, setEvents] = useState([]);
   const [currentEvent, setCurrentEvent] = useState(null);
@@ -104,7 +100,7 @@ export default function App() {
         wakeLock.release().catch(() => {});
       }
     };
-  }, []); // Run dit maar 1x wanneer de app laadt
+  }, []); 
 
   // 1. Authenticatie luisteraar instellen
   useEffect(() => {
@@ -115,7 +111,6 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
-  // Login Handler
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -127,7 +122,6 @@ export default function App() {
     }
   };
 
-  // Logout Handler
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -168,7 +162,6 @@ export default function App() {
     setCurrentEvent(null);
   };
 
-  // 3. Opslaan in de Cloud
   const saveEvent = async (updatedEvent) => {
     if (!user) return;
     try {
@@ -180,7 +173,6 @@ export default function App() {
     setCurrentEvent(updatedEvent);
   };
 
-  // 4. Snelle updates in de Cloud (voor de dashboard acties)
   const updateEventPartial = async (id, updates) => {
     if (!user) return;
     const targetEvent = events.find(e => e.id === id);
@@ -195,7 +187,6 @@ export default function App() {
     }
   };
 
-  // 5. Verwijderen uit de Cloud
   const handleDeleteConfirm = async () => {
     if (!user || !eventToDelete) return;
     try {
@@ -245,7 +236,6 @@ export default function App() {
     setCurrentEvent(newEvent);
   };
 
-  // --- RENDER LOGIN SCHERM ALS NIET INGELOGD ---
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -312,10 +302,8 @@ export default function App() {
     );
   }
 
-  // --- RENDER HOOFD APPLICATIE ALS WEL INGELOGD ---
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800 pb-12 relative">
-      {/* Global Print Styles */}
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 15mm; }
@@ -329,7 +317,6 @@ export default function App() {
         }
       `}</style>
 
-      {/* Header */}
       <header className="bg-red-700 text-white p-4 shadow-md flex items-center justify-between print-hidden">
         <div className="flex items-center gap-3">
           <img 
@@ -350,7 +337,6 @@ export default function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="p-4 md:p-6 max-w-7xl mx-auto print-wrapper">
         {!currentEvent ? (
           <Dashboard 
@@ -365,7 +351,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Custom Confirmation Modal */}
       {eventToDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print-hidden">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full border-t-4 border-red-600">
@@ -394,7 +379,6 @@ export default function App() {
   );
 }
 
-// --- DASHBOARD COMPONENT ---
 function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
   const today = new Date().toISOString().split('T')[0];
 
@@ -577,7 +561,6 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
   );
 }
 
-// --- EVENT EDITOR (TABS MANAGER MET AUTO-SAVE) ---
 function EventEditor({ event, onSave, onClose }) {
   const [activeTab, setActiveTab] = useState(TABS.BRIEFING);
   const [formData, setFormData] = useState(event);
@@ -587,14 +570,12 @@ function EventEditor({ event, onSave, onClose }) {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState(new Date());
 
-  // Zorg dat inkomende Cloud-updates niet de tekst overschrijven die de gebruiker nét aan het typen is
   useEffect(() => {
     if (!isDirtyRef.current) {
       setFormData(event);
     }
   }, [event]);
 
-  // Update formData en trigger dirty state
   const updateField = (path, value) => {
     isDirtyRef.current = true;
     setFormData(prev => {
@@ -609,7 +590,6 @@ function EventEditor({ event, onSave, onClose }) {
     });
   };
 
-  // Debounced Auto-save (wacht 1.5s na typen of klikken, slaat dan pas op in cloud)
   useEffect(() => {
     if (isDirtyRef.current) {
       setIsSaving(true);
@@ -618,13 +598,12 @@ function EventEditor({ event, onSave, onClose }) {
         isDirtyRef.current = false;
         setIsSaving(false);
         setLastSavedTime(new Date());
-      }, 1500); // 1.5 seconde pauze voor typen
+      }, 1500); 
       
       return () => clearTimeout(timer);
     }
   }, [formData, onSave]);
 
-  // Bij het geforceerd afsluiten (via de Terug-knop) direct opslaan als er nog iets was veranderd
   const handleClose = () => {
     if (isDirtyRef.current) {
       onSave(formData);
@@ -634,7 +613,6 @@ function EventEditor({ event, onSave, onClose }) {
 
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[80vh] print-wrapper">
-      {/* Sidebar Navigation */}
       <div className="w-full md:w-64 bg-gray-50 border-r flex flex-col print-hidden">
         <div className="p-4 border-b">
           <button 
@@ -689,7 +667,7 @@ function EventEditor({ event, onSave, onClose }) {
           <TabButton icon={<CheckCircle size={18}/>} label="5. Facturatie" active={activeTab === TABS.FACTUUR} onClick={() => setActiveTab(TABS.FACTUUR)} />
         </nav>
         
-        {/* Auto-Save Status Indicator ipv de grote Opslaan-knop */}
+        {/* Auto-Save Status Indicator */}
         <div className="p-4 border-t flex flex-col items-center justify-center bg-gray-100/50 rounded-b-lg">
           {isSaving ? (
             <span className="text-blue-600 flex items-center gap-2 font-bold text-sm">
@@ -709,7 +687,6 @@ function EventEditor({ event, onSave, onClose }) {
 
       </div>
 
-      {/* Content Area */}
       <div className="flex-1 p-6 overflow-y-auto bg-gray-50/50 print-wrapper relative">
         {activeTab === TABS.BRIEFING && <TabBriefing data={formData} updateField={updateField} />}
         {activeTab === TABS.OFFERTE && <TabOfferte data={formData} updateField={updateField} />}
@@ -752,7 +729,6 @@ function PrintHeader({ title }) {
   );
 }
 
-// TAB 1: BRIEFING & INFO (Print voor personeel)
 function TabBriefing({ data, updateField }) {
   const b = data.briefing;
   const o = data.offerte;
@@ -1070,7 +1046,6 @@ ${b.omschrijvingVerzorging || '-'}
   );
 }
 
-// TAB 2: OFFERTE / RAMING (EN GECOMBINEERDE KLANT PDF)
 function TabOfferte({ data, updateField }) {
   const o = data.offerte;
   const b = data.briefing;
@@ -1374,7 +1349,6 @@ function TabOfferte({ data, updateField }) {
   );
 }
 
-// TAB 3: TURFLIJST BAR
 function TabTurflijst({ data, updateField }) {
   const t = data.turflijst || {};
   const [newCustomName, setNewCustomName] = useState('');
@@ -1394,7 +1368,6 @@ function TabTurflijst({ data, updateField }) {
     updateField(`turflijst.${id}`, (t[id] || 0) + 1);
   };
 
-  // Deze functie opent alleen de pop-up, de daadwerkelijke min-actie zit in confirmDecrement
   const requestDecrement = (id) => {
     if (t[id] > 0) {
       setItemToDecrement(id);
@@ -1404,7 +1377,6 @@ function TabTurflijst({ data, updateField }) {
     }
   };
 
-  // Bevestig de pincode voor afwaardering
   const confirmDecrement = (e) => {
     e.preventDefault();
     if (pinInput === '1199') {
@@ -1412,7 +1384,7 @@ function TabTurflijst({ data, updateField }) {
       setPinModalOpen(false);
     } else {
       setPinError(true);
-      setPinInput(''); // Maak veld weer leeg bij fout
+      setPinInput(''); 
     }
   };
 
@@ -1693,7 +1665,6 @@ function TabTurflijst({ data, updateField }) {
   );
 }
 
-// TAB 4: DEBRIEFING
 function TabDebriefing({ data, updateField }) {
   const d = data.debriefing || { goed: '', beter: '', tevreden: '', opmerkingen: '' };
 
@@ -1772,12 +1743,14 @@ function TabDebriefing({ data, updateField }) {
   );
 }
 
-// TAB 5: FACTUUR
 function TabFactuur({ data }) {
   const calcTotaal = (row) => (Number(row.aantal) || 1) * (Number(row.uren) || 1) * (Number(row.tarief || row.prijs) || 0);
   
   let totaalIncl = 0;
+  let exBtw0Bedrag = 0;
+  let exBtw9Bedrag = 0;
   let btw9Bedrag = 0;
+  let exBtw21Bedrag = 0;
   let btw21Bedrag = 0;
 
   // 1. Bereken Originele Offerte Totaal (Voor de Interne Controle)
@@ -1788,10 +1761,17 @@ function TabFactuur({ data }) {
 
   const processItemForTotals = (totIncl, btwFactor) => {
     totaalIncl += totIncl;
-    if (btwFactor === 9) {
-      btw9Bedrag += totIncl - (totIncl / 1.09);
+    const exBtw = totIncl / (1 + (btwFactor / 100));
+    const btwAmount = totIncl - exBtw;
+
+    if (btwFactor === 0) {
+      exBtw0Bedrag += exBtw;
+    } else if (btwFactor === 9) {
+      exBtw9Bedrag += exBtw;
+      btw9Bedrag += btwAmount;
     } else if (btwFactor === 21) {
-      btw21Bedrag += totIncl - (totIncl / 1.21);
+      exBtw21Bedrag += exBtw;
+      btw21Bedrag += btwAmount;
     }
   };
 
@@ -1818,13 +1798,12 @@ function TabFactuur({ data }) {
     }
   });
 
-  const totaalEx = totaalIncl - btw9Bedrag - btw21Bedrag;
+  const totaalEx = exBtw0Bedrag + exBtw9Bedrag + exBtw21Bedrag;
+  const totaleBtw = btw9Bedrag + btw21Bedrag;
   
-  // Bereken openstaand bedrag op basis van aanbetaling
   const aanbetaling = Number(data.aanbetaling) || 0;
   const nogTeVoldoen = totaalIncl - aanbetaling;
 
-  // Stoplicht logica voor Interne Controle
   const afwijkingBedrag = Math.abs(totaalIncl - origineleOfferteTotaal);
   const afwijkingPercentage = origineleOfferteTotaal > 0 ? (afwijkingBedrag / origineleOfferteTotaal) * 100 : 0;
   
@@ -1842,11 +1821,10 @@ function TabFactuur({ data }) {
     statusTekst = "Opvallende afwijking, werp een extra blik (10% - 25%)";
   }
 
-  // Genereer UBL XML voor Exact Online
+  // --- PEPPOL SI-UBL 2.0 GENERATOR ---
   const generateUBL = () => {
     const dateToday = new Date().toISOString().split('T')[0];
     
-    // Stel een vervaldatum in (Standaard +14 dagen)
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + 14);
     const dateDueStr = dueDate.toISOString().split('T')[0];
@@ -1854,16 +1832,16 @@ function TabFactuur({ data }) {
     const factuurNummer = `FACTUUR-${data.id.slice(-6)}`;
     const klantNaam = data.briefing.bedrijfsnaam || data.briefing.contactKlant || 'Onbekende Klant';
     
-    // Voorkom fouten met speciale tekens in XML
     const escapeXML = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     let invoiceLinesXML = '';
     let lineID = 1;
+    let computedLineExtensionAmount = 0; // Wordt berekend door de loop voor validatie
 
-    // Hulpfunctie om regels op te bouwen volgens SI-UBL standaard
     const addLine = (name, quantity, priceIncl, btwPercent) => {
       const priceExcl = priceIncl / (1 + (btwPercent / 100));
       const lineTotalExcl = quantity * priceExcl;
+      computedLineExtensionAmount += lineTotalExcl;
       
       invoiceLinesXML += `
   <cac:InvoiceLine>
@@ -1885,28 +1863,16 @@ function TabFactuur({ data }) {
   </cac:InvoiceLine>`;
     };
 
-    // 1. Voeg Offerte items toe (die aangevinkt zijn voor factuur)
-    const factuurOfferteItems = data.offerte.filter(row => row.inFactuur !== false);
     factuurOfferteItems.forEach(row => {
       const qty = (Number(row.aantal) || 1) * (Number(row.uren) || 1);
       addLine(row.dienst, qty, Number(row.tarief), Number(row.btw));
     });
 
-    // 2. Voeg Turflijst items toe
-    const allTurfItems = [...DEFAULT_TURF_ITEMS, ...(data.extraTurfItems || [])];
-    Object.keys(data.turflijst || {}).forEach(id => {
-      const count = data.turflijst[id];
-      if (count > 0) {
-        const defItem = allTurfItems.find(i => i.id === id);
-        if (defItem) {
-          addLine(defItem.naam, count, defItem.prijs, defItem.btw);
-        }
-      }
+    turfItemsList.forEach(item => {
+      addLine(item.naam, item.aantal, item.prijs, item.btw);
     });
 
-    const exBtw9Bedrag = btw9Bedrag > 0 ? (btw9Bedrag / 0.09) : 0;
-    const exBtw21Bedrag = btw21Bedrag > 0 ? (btw21Bedrag / 0.21) : 0;
-
+    // Peppol/SI-UBL 2.0 XML Schema
     const ublString = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
@@ -1918,6 +1884,7 @@ function TabFactuur({ data }) {
   <cbc:DueDate>${dateDueStr}</cbc:DueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>${escapeXML(data.briefing.referentieNummer || factuurNummer)}</cbc:BuyerReference>
   <cac:AccountingSupplierParty>
     <cac:Party>
       <cbc:EndpointID schemeID="0106">89387260</cbc:EndpointID>
@@ -1940,6 +1907,7 @@ function TabFactuur({ data }) {
   </cac:AccountingSupplierParty>
   <cac:AccountingCustomerParty>
     <cac:Party>
+      <cbc:EndpointID schemeID="0106">00000000</cbc:EndpointID>
       <cac:PartyName><cbc:Name>${escapeXML(klantNaam)}</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
         <cbc:StreetName>${escapeXML(data.briefing.adresKlant || 'Onbekend')}</cbc:StreetName>
@@ -1959,8 +1927,18 @@ function TabFactuur({ data }) {
     </cac:PayeeFinancialAccount>
   </cac:PaymentMeans>
   <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="EUR">${(btw9Bedrag + btw21Bedrag).toFixed(2)}</cbc:TaxAmount>
-    ${btw9Bedrag > 0 ? `
+    <cbc:TaxAmount currencyID="EUR">${totaleBtw.toFixed(2)}</cbc:TaxAmount>
+    ${exBtw0Bedrag > 0 ? `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${exBtw0Bedrag.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>Z</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>` : ''}
+    ${exBtw9Bedrag > 0 ? `
     <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="EUR">${exBtw9Bedrag.toFixed(2)}</cbc:TaxableAmount>
       <cbc:TaxAmount currencyID="EUR">${btw9Bedrag.toFixed(2)}</cbc:TaxAmount>
@@ -1970,7 +1948,7 @@ function TabFactuur({ data }) {
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:TaxCategory>
     </cac:TaxSubtotal>` : ''}
-    ${btw21Bedrag > 0 ? `
+    ${exBtw21Bedrag > 0 ? `
     <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="EUR">${exBtw21Bedrag.toFixed(2)}</cbc:TaxableAmount>
       <cbc:TaxAmount currencyID="EUR">${btw21Bedrag.toFixed(2)}</cbc:TaxAmount>
@@ -1980,19 +1958,9 @@ function TabFactuur({ data }) {
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:TaxCategory>
     </cac:TaxSubtotal>` : ''}
-    ${(btw9Bedrag === 0 && btw21Bedrag === 0) ? `
-    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="EUR">${totaalEx.toFixed(2)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
-      <cac:TaxCategory>
-        <cbc:ID>Z</cbc:ID>
-        <cbc:Percent>0</cbc:Percent>
-        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-      </cac:TaxCategory>
-    </cac:TaxSubtotal>` : ''}
   </cac:TaxTotal>
   <cac:LegalMonetaryTotal>
-    <cbc:LineExtensionAmount currencyID="EUR">${totaalEx.toFixed(2)}</cbc:LineExtensionAmount>
+    <cbc:LineExtensionAmount currencyID="EUR">${computedLineExtensionAmount.toFixed(2)}</cbc:LineExtensionAmount>
     <cbc:TaxExclusiveAmount currencyID="EUR">${totaalEx.toFixed(2)}</cbc:TaxExclusiveAmount>
     <cbc:TaxInclusiveAmount currencyID="EUR">${totaalIncl.toFixed(2)}</cbc:TaxInclusiveAmount>
     <cbc:PrepaidAmount currencyID="EUR">${aanbetaling.toFixed(2)}</cbc:PrepaidAmount>
@@ -2013,7 +1981,6 @@ function TabFactuur({ data }) {
   return (
     <div className="space-y-6 animate-in fade-in max-w-4xl mx-auto pb-10">
       
-      {/* Verborgen tijdens printen: Stoplicht / Sanity Check */}
       <div className={`print-hidden border rounded-lg p-4 mb-6 flex items-center gap-4 shadow-sm ${statusKleur}`}>
         {statusIcon}
         <div className="flex-1">
@@ -2083,7 +2050,6 @@ function TabFactuur({ data }) {
           </div>
         </div>
 
-        {/* Vaste kosten */}
         {factuurOfferteItems.length > 0 && (
           <div className="print-break-inside-avoid">
             <h4 className="font-bold border-b border-gray-300 pb-1 mb-2 mt-6 text-red-800">Vaste kosten (volgens offerte)</h4>
@@ -2112,7 +2078,6 @@ function TabFactuur({ data }) {
           </div>
         )}
 
-        {/* Nacalculatie Turflijst */}
         {turfItemsList.length > 0 && (
           <div className="print-break-inside-avoid">
             <h4 className="font-bold border-b border-gray-300 pb-1 mb-2 mt-6 text-red-800">Nacalculatie (Turflijst Bar)</h4>
@@ -2141,7 +2106,6 @@ function TabFactuur({ data }) {
           </div>
         )}
 
-        {/* Totalen Berekeningen */}
         <div className="w-full flex justify-end mt-8 print-break-inside-avoid">
           <div className="w-72 space-y-2 text-sm border-t-2 border-gray-800 pt-4">
             <div className="flex justify-between text-lg font-black text-red-800 border-b border-gray-300 pb-2 mb-2">
@@ -2165,7 +2129,6 @@ function TabFactuur({ data }) {
               <span>€ {totaalEx.toFixed(2)}</span>
             </div>
             
-            {/* Aanbetaling & Eindbedrag Weergave */}
             {aanbetaling > 0 && (
               <>
                 <div className="flex justify-between text-gray-600 font-semibold pt-1">
@@ -2186,8 +2149,6 @@ function TabFactuur({ data }) {
     </div>
   );
 }
-
-// --- UTILITY COMPONENTS ---
 
 function Input({ label, type = "text", value, onChange, placeholder = '' }) {
   return (
@@ -2217,7 +2178,6 @@ function Textarea({ label, value, onChange }) {
   );
 }
 
-// Speciale component voor de halve-uur intervallen (00 of 30)
 function TimeSelect({ value, onChange, className = '' }) {
   const times = [];
   for (let h = 0; h < 24; h++) {
