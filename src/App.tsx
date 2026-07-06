@@ -1,9 +1,9 @@
 // @ts-nocheck
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Calendar, Clock, FileText, Beer, Receipt, 
   Plus, Trash2, ChevronLeft, Save, CheckCircle, Edit,
-  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings, AlertTriangle
+  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings, AlertTriangle, RefreshCw, Lock
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS (CLOUD DATABASE & AUTH) ---
@@ -71,6 +71,40 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+
+  // 0. Scherm aanhouden op iPads / Tablets (Wake Lock API)
+  useEffect(() => {
+    let wakeLock = null;
+
+    const requestWakeLock = async () => {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+          console.log('Wake Lock actief: Scherm blijft aan!');
+        }
+      } catch (err) {
+        console.log('Wake Lock error (kan geweigerd zijn of niet ondersteund):', err);
+      }
+    };
+
+    requestWakeLock();
+
+    // Vraag de lock opnieuw aan als we terugkomen van een andere app of tab
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        requestWakeLock();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (wakeLock !== null) {
+        wakeLock.release().catch(() => {});
+      }
+    };
+  }, []); // Run dit maar 1x wanneer de app laadt
 
   // 1. Authenticatie luisteraar instellen
   useEffect(() => {
@@ -313,15 +347,6 @@ export default function App() {
               <LogOut size={12}/> Uitloggen
             </button>
           </div>
-          {currentEvent && (
-            <button 
-              type="button"
-              onClick={closeEvent} 
-              className="flex items-center gap-2 hover:bg-red-800 px-3 py-1 rounded transition border border-transparent hover:border-red-500 font-semibold ml-2"
-            >
-              <ChevronLeft size={20} /> <span className="hidden sm:inline">Terug naar overzicht</span>
-            </button>
-          )}
         </div>
       </header>
 
@@ -552,14 +577,26 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
   );
 }
 
-// --- EVENT EDITOR (TABS MANAGER) ---
+// --- EVENT EDITOR (TABS MANAGER MET AUTO-SAVE) ---
 function EventEditor({ event, onSave, onClose }) {
   const [activeTab, setActiveTab] = useState(TABS.BRIEFING);
   const [formData, setFormData] = useState(event);
+  
+  // Auto-save states en refs
+  const isDirtyRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedTime, setLastSavedTime] = useState(new Date());
 
-  useEffect(() => { setFormData(event); }, [event]);
+  // Zorg dat inkomende Cloud-updates niet de tekst overschrijven die de gebruiker nét aan het typen is
+  useEffect(() => {
+    if (!isDirtyRef.current) {
+      setFormData(event);
+    }
+  }, [event]);
 
+  // Update formData en trigger dirty state
   const updateField = (path, value) => {
+    isDirtyRef.current = true;
     setFormData(prev => {
       const newData = { ...prev };
       const keys = path.split('.');
@@ -572,7 +609,28 @@ function EventEditor({ event, onSave, onClose }) {
     });
   };
 
-  const handleSave = () => onSave(formData);
+  // Debounced Auto-save (wacht 1.5s na typen of klikken, slaat dan pas op in cloud)
+  useEffect(() => {
+    if (isDirtyRef.current) {
+      setIsSaving(true);
+      const timer = setTimeout(async () => {
+        await onSave(formData);
+        isDirtyRef.current = false;
+        setIsSaving(false);
+        setLastSavedTime(new Date());
+      }, 1500); // 1.5 seconde pauze voor typen
+      
+      return () => clearTimeout(timer);
+    }
+  }, [formData, onSave]);
+
+  // Bij het geforceerd afsluiten (via de Terug-knop) direct opslaan als er nog iets was veranderd
+  const handleClose = () => {
+    if (isDirtyRef.current) {
+      onSave(formData);
+    }
+    onClose();
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[80vh] print-wrapper">
@@ -581,7 +639,7 @@ function EventEditor({ event, onSave, onClose }) {
         <div className="p-4 border-b">
           <button 
             type="button"
-            onClick={onClose} 
+            onClick={handleClose} 
             className="mb-6 text-sm text-gray-600 hover:text-red-700 flex items-center gap-1 font-medium transition"
           >
             <ChevronLeft size={16} /> Terug naar overzicht
@@ -589,7 +647,7 @@ function EventEditor({ event, onSave, onClose }) {
           
           <div className="mb-2">
             <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1 mb-1">
-              <Edit size={12}/> Naam evenement wijzigen
+              <Edit size={12}/> Naam evenement
             </label>
             <input 
               type="text" 
@@ -630,11 +688,25 @@ function EventEditor({ event, onSave, onClose }) {
           <TabButton icon={<MessageSquare size={18}/>} label="4. Debriefing" active={activeTab === TABS.DEBRIEFING} onClick={() => setActiveTab(TABS.DEBRIEFING)} />
           <TabButton icon={<CheckCircle size={18}/>} label="5. Facturatie" active={activeTab === TABS.FACTUUR} onClick={() => setActiveTab(TABS.FACTUUR)} />
         </nav>
-        <div className="p-4 border-t">
-          <button type="button" onClick={handleSave} className="w-full bg-red-700 hover:bg-red-800 text-white py-2 rounded flex items-center justify-center gap-2 transition font-bold shadow">
-            <Save size={18} /> Opslaan
-          </button>
+        
+        {/* Auto-Save Status Indicator ipv de grote Opslaan-knop */}
+        <div className="p-4 border-t flex flex-col items-center justify-center bg-gray-100/50 rounded-b-lg">
+          {isSaving ? (
+            <span className="text-blue-600 flex items-center gap-2 font-bold text-sm">
+              <RefreshCw size={16} className="animate-spin" /> Opslaan...
+            </span>
+          ) : (
+            <div className="flex flex-col items-center">
+              <span className="text-green-600 flex items-center gap-2 font-bold text-sm">
+                <CheckCircle size={16} /> Opgeslagen in Cloud
+              </span>
+              <span className="text-xs text-gray-500 mt-1">
+                Laatst: {lastSavedTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+              </span>
+            </div>
+          )}
         </div>
+
       </div>
 
       {/* Content Area */}
@@ -1312,13 +1384,35 @@ function TabTurflijst({ data, updateField }) {
   const [bulkItemId, setBulkItemId] = useState('');
   const [bulkAmount, setBulkAmount] = useState('');
 
+  // PIN code beveiliging states
+  const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [itemToDecrement, setItemToDecrement] = useState(null);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
+
   const increment = (id) => {
     updateField(`turflijst.${id}`, (t[id] || 0) + 1);
   };
 
-  const decrement = (id) => {
+  // Deze functie opent alleen de pop-up, de daadwerkelijke min-actie zit in confirmDecrement
+  const requestDecrement = (id) => {
     if (t[id] > 0) {
-      updateField(`turflijst.${id}`, t[id] - 1);
+      setItemToDecrement(id);
+      setPinInput('');
+      setPinError(false);
+      setPinModalOpen(true);
+    }
+  };
+
+  // Bevestig de pincode voor afwaardering
+  const confirmDecrement = (e) => {
+    e.preventDefault();
+    if (pinInput === '1199') {
+      updateField(`turflijst.${itemToDecrement}`, t[itemToDecrement] - 1);
+      setPinModalOpen(false);
+    } else {
+      setPinError(true);
+      setPinInput(''); // Maak veld weer leeg bij fout
     }
   };
 
@@ -1391,7 +1485,7 @@ function TabTurflijst({ data, updateField }) {
                   <div className="flex items-center gap-4 w-full justify-between">
                     <button 
                       type="button"
-                      onClick={() => decrement(item.id)}
+                      onClick={() => requestDecrement(item.id)}
                       className="w-12 h-12 bg-gray-100 hover:bg-gray-200 rounded-full text-2xl font-black text-gray-600 active:bg-gray-300 flex items-center justify-center transition"
                     >-</button>
                     <span className="text-3xl font-black text-red-700 w-12">{t[item.id] || 0}</span>
@@ -1547,6 +1641,53 @@ function TabTurflijst({ data, updateField }) {
           </div>
         )}
       </div>
+
+      {/* PIN Beveiliging Modal voor Afwaarderen (-) */}
+      {pinModalOpen && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 print-hidden">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full border-t-4 border-red-700 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="bg-red-100 p-2 rounded-full text-red-700">
+                <Lock size={24} />
+              </div>
+              <h3 className="font-bold text-xl text-gray-900">Beveiligde Actie</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">
+              Voer de pincode in om een geturfd drankje te verwijderen.
+            </p>
+            <form onSubmit={confirmDecrement}>
+              <div className="mb-4">
+                <input 
+                  type="password" 
+                  pattern="[0-9]*"
+                  inputMode="numeric"
+                  value={pinInput} 
+                  onChange={e => setPinInput(e.target.value)} 
+                  className={`w-full border rounded-lg p-3 text-center text-2xl tracking-widest font-mono outline-none transition focus:ring-2 focus:ring-red-700 ${pinError ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} 
+                  autoFocus 
+                  placeholder="••••"
+                />
+                {pinError && <p className="text-red-600 text-xs mt-2 font-bold text-center">Onjuiste pincode ingevoerd.</p>}
+              </div>
+              <div className="flex gap-3 justify-end mt-6">
+                <button 
+                  type="button" 
+                  onClick={() => setPinModalOpen(false)} 
+                  className="px-4 py-2 border border-gray-300 rounded font-semibold text-gray-700 hover:bg-gray-50 transition flex-1"
+                >
+                  Annuleren
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-4 py-2 bg-red-700 text-white font-bold rounded hover:bg-red-800 transition shadow flex-1"
+                >
+                  Bevestigen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   );
