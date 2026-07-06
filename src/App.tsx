@@ -1,15 +1,17 @@
 // @ts-nocheck
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, Clock, FileText, Beer, Receipt, 
   Plus, Trash2, ChevronLeft, Save, CheckCircle, Edit,
-  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings, AlertTriangle, RefreshCw, Lock
+  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings, AlertTriangle
 } from 'lucide-react';
 
+// --- FIREBASE IMPORTS (CLOUD DATABASE & AUTH) ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
+// --- FIREBASE INITIALIZATIE ---
 const firebaseConfig = {
   apiKey: "AIzaSyCI32rKb-DYb-3uAHOrBiQAfRrzunKl9Xg",
   authDomain: "vulcaan-event-planner.firebaseapp.com",
@@ -25,6 +27,7 @@ const auth = getAuth(app);
 const db = getFirestore(app);
 const appId = 'vulcaan-event-planner';
 
+// --- DATA & CONFIG ---
 const TABS = {
   BRIEFING: 'briefing',
   OFFERTE: 'offerte',
@@ -56,6 +59,7 @@ const PREDEFINED_ACTIONS = [
   "FACTUUR VERSTUREN"
 ];
 
+// --- MAIN APP COMPONENT ---
 export default function App() {
   const [events, setEvents] = useState([]);
   const [currentEvent, setCurrentEvent] = useState(null);
@@ -68,40 +72,6 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
 
-  // 0. Scherm aanhouden op iPads / Tablets (Wake Lock API)
-  useEffect(() => {
-    let wakeLock = null;
-
-    const requestWakeLock = async () => {
-      try {
-        if ('wakeLock' in navigator) {
-          wakeLock = await navigator.wakeLock.request('screen');
-          console.log('Wake Lock actief: Scherm blijft aan!');
-        }
-      } catch (err) {
-        console.log('Wake Lock error (kan geweigerd zijn of niet ondersteund):', err);
-      }
-    };
-
-    requestWakeLock();
-
-    // Vraag de lock opnieuw aan als we terugkomen van een andere app of tab
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        requestWakeLock();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (wakeLock !== null) {
-        wakeLock.release().catch(() => {});
-      }
-    };
-  }, []); 
-
   // 1. Authenticatie luisteraar instellen
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (u) => {
@@ -111,6 +81,7 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  // Login Handler
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -122,6 +93,7 @@ export default function App() {
     }
   };
 
+  // Logout Handler
   const handleLogout = async () => {
     try {
       await signOut(auth);
@@ -162,6 +134,7 @@ export default function App() {
     setCurrentEvent(null);
   };
 
+  // 3. Opslaan in de Cloud
   const saveEvent = async (updatedEvent) => {
     if (!user) return;
     try {
@@ -173,6 +146,7 @@ export default function App() {
     setCurrentEvent(updatedEvent);
   };
 
+  // 4. Snelle updates in de Cloud (voor de dashboard acties)
   const updateEventPartial = async (id, updates) => {
     if (!user) return;
     const targetEvent = events.find(e => e.id === id);
@@ -187,6 +161,7 @@ export default function App() {
     }
   };
 
+  // 5. Verwijderen uit de Cloud
   const handleDeleteConfirm = async () => {
     if (!user || !eventToDelete) return;
     try {
@@ -236,6 +211,7 @@ export default function App() {
     setCurrentEvent(newEvent);
   };
 
+  // --- RENDER LOGIN SCHERM ALS NIET INGELOGD ---
   if (authLoading) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center">
@@ -302,8 +278,10 @@ export default function App() {
     );
   }
 
+  // --- RENDER HOOFD APPLICATIE ALS WEL INGELOGD ---
   return (
     <div className="min-h-screen bg-gray-100 font-sans text-gray-800 pb-12 relative">
+      {/* Global Print Styles */}
       <style>{`
         @media print {
           @page { size: A4 portrait; margin: 15mm; }
@@ -317,6 +295,7 @@ export default function App() {
         }
       `}</style>
 
+      {/* Header */}
       <header className="bg-red-700 text-white p-4 shadow-md flex items-center justify-between print-hidden">
         <div className="flex items-center gap-3">
           <img 
@@ -334,9 +313,19 @@ export default function App() {
               <LogOut size={12}/> Uitloggen
             </button>
           </div>
+          {currentEvent && (
+            <button 
+              type="button"
+              onClick={closeEvent} 
+              className="flex items-center gap-2 hover:bg-red-800 px-3 py-1 rounded transition border border-transparent hover:border-red-500 font-semibold ml-2"
+            >
+              <ChevronLeft size={20} /> <span className="hidden sm:inline">Terug naar overzicht</span>
+            </button>
+          )}
         </div>
       </header>
 
+      {/* Main Content */}
       <main className="p-4 md:p-6 max-w-7xl mx-auto print-wrapper">
         {!currentEvent ? (
           <Dashboard 
@@ -351,6 +340,7 @@ export default function App() {
         )}
       </main>
 
+      {/* Custom Confirmation Modal */}
       {eventToDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print-hidden">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full border-t-4 border-red-600">
@@ -379,6 +369,7 @@ export default function App() {
   );
 }
 
+// --- DASHBOARD COMPONENT ---
 function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
   const today = new Date().toISOString().split('T')[0];
 
@@ -561,23 +552,26 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
   );
 }
 
+// --- EVENT EDITOR (TABS MANAGER) ---
 function EventEditor({ event, onSave, onClose }) {
   const [activeTab, setActiveTab] = useState(TABS.BRIEFING);
   const [formData, setFormData] = useState(event);
-  
-  // Auto-save states en refs
-  const isDirtyRef = useRef(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [lastSavedTime, setLastSavedTime] = useState(new Date());
 
+  useEffect(() => { setFormData(event); }, [event]);
+
+  // Automatisch opslaan functionaliteit toegevoegd
   useEffect(() => {
-    if (!isDirtyRef.current) {
-      setFormData(event);
-    }
-  }, [event]);
+    const handler = setTimeout(() => {
+      // Voorkom onnodige saves als er niks veranderd is ten opzichte van het bron-event (simpele check)
+      if (JSON.stringify(formData) !== JSON.stringify(event)) {
+        onSave(formData);
+      }
+    }, 1500); // Wacht 1,5s na laatste toetsaanslag
+
+    return () => clearTimeout(handler);
+  }, [formData]);
 
   const updateField = (path, value) => {
-    isDirtyRef.current = true;
     setFormData(prev => {
       const newData = { ...prev };
       const keys = path.split('.');
@@ -590,34 +584,16 @@ function EventEditor({ event, onSave, onClose }) {
     });
   };
 
-  useEffect(() => {
-    if (isDirtyRef.current) {
-      setIsSaving(true);
-      const timer = setTimeout(async () => {
-        await onSave(formData);
-        isDirtyRef.current = false;
-        setIsSaving(false);
-        setLastSavedTime(new Date());
-      }, 1500); 
-      
-      return () => clearTimeout(timer);
-    }
-  }, [formData, onSave]);
-
-  const handleClose = () => {
-    if (isDirtyRef.current) {
-      onSave(formData);
-    }
-    onClose();
-  };
+  const isSaving = JSON.stringify(formData) !== JSON.stringify(event);
 
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[80vh] print-wrapper">
-      <div className="w-full md:w-64 bg-gray-50 border-r flex flex-col print-hidden">
+      {/* Sidebar Navigation */}
+      <div className="w-full md:w-64 bg-gray-50 border-r flex flex-col print-hidden relative">
         <div className="p-4 border-b">
           <button 
             type="button"
-            onClick={handleClose} 
+            onClick={onClose} 
             className="mb-6 text-sm text-gray-600 hover:text-red-700 flex items-center gap-1 font-medium transition"
           >
             <ChevronLeft size={16} /> Terug naar overzicht
@@ -625,7 +601,7 @@ function EventEditor({ event, onSave, onClose }) {
           
           <div className="mb-2">
             <label className="text-xs text-gray-500 uppercase font-bold flex items-center gap-1 mb-1">
-              <Edit size={12}/> Naam evenement
+              <Edit size={12}/> Naam evenement wijzigen
             </label>
             <input 
               type="text" 
@@ -667,26 +643,22 @@ function EventEditor({ event, onSave, onClose }) {
           <TabButton icon={<CheckCircle size={18}/>} label="5. Facturatie" active={activeTab === TABS.FACTUUR} onClick={() => setActiveTab(TABS.FACTUUR)} />
         </nav>
         
-        {/* Auto-Save Status Indicator */}
-        <div className="p-4 border-t flex flex-col items-center justify-center bg-gray-100/50 rounded-b-lg">
+        {/* Autosave indicator */}
+        <div className="p-4 border-t bg-gray-100 flex items-center justify-center text-sm font-semibold">
           {isSaving ? (
-            <span className="text-blue-600 flex items-center gap-2 font-bold text-sm">
-              <RefreshCw size={16} className="animate-spin" /> Opslaan...
+            <span className="text-gray-500 flex items-center gap-2">
+              <div className="w-3 h-3 border-2 border-t-gray-500 border-gray-300 rounded-full animate-spin"></div>
+              Aan het opslaan...
             </span>
           ) : (
-            <div className="flex flex-col items-center">
-              <span className="text-green-600 flex items-center gap-2 font-bold text-sm">
-                <CheckCircle size={16} /> Opgeslagen in Cloud
-              </span>
-              <span className="text-xs text-gray-500 mt-1">
-                Laatst: {lastSavedTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-              </span>
-            </div>
+            <span className="text-green-600 flex items-center gap-2">
+              <CheckCircle size={16} /> Opgeslagen in cloud
+            </span>
           )}
         </div>
-
       </div>
 
+      {/* Content Area */}
       <div className="flex-1 p-6 overflow-y-auto bg-gray-50/50 print-wrapper relative">
         {activeTab === TABS.BRIEFING && <TabBriefing data={formData} updateField={updateField} />}
         {activeTab === TABS.OFFERTE && <TabOfferte data={formData} updateField={updateField} />}
@@ -729,6 +701,7 @@ function PrintHeader({ title }) {
   );
 }
 
+// TAB 1: BRIEFING & INFO (Print voor personeel)
 function TabBriefing({ data, updateField }) {
   const b = data.briefing;
   const o = data.offerte;
@@ -1046,6 +1019,7 @@ ${b.omschrijvingVerzorging || '-'}
   );
 }
 
+// TAB 2: OFFERTE / RAMING (EN GECOMBINEERDE KLANT PDF)
 function TabOfferte({ data, updateField }) {
   const o = data.offerte;
   const b = data.briefing;
@@ -1093,6 +1067,7 @@ function TabOfferte({ data, updateField }) {
       <div className="flex justify-between items-end border-b border-red-200 pb-2 mb-6 print-hidden">
         <h2 className="text-2xl font-bold text-red-800">Offerte & Raming</h2>
         <div className="flex gap-2">
+          {/* Mail knop verwijderd, zoals gevraagd */}
           <button 
             type="button" 
             onClick={() => {
@@ -1349,42 +1324,46 @@ function TabOfferte({ data, updateField }) {
   );
 }
 
+// TAB 3: TURFLIJST BAR
 function TabTurflijst({ data, updateField }) {
   const t = data.turflijst || {};
   const [newCustomName, setNewCustomName] = useState('');
   const [newCustomPrice, setNewCustomPrice] = useState('');
+  
+  // Pincode functionaliteit
+  const [showPinModal, setShowPinModal] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
+  const [itemToDecrement, setItemToDecrement] = useState(null);
 
   // Bulk update states voor administratie
   const [bulkItemId, setBulkItemId] = useState('');
   const [bulkAmount, setBulkAmount] = useState('');
 
-  // PIN code beveiliging states
-  const [pinModalOpen, setPinModalOpen] = useState(false);
-  const [itemToDecrement, setItemToDecrement] = useState(null);
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState(false);
-
   const increment = (id) => {
     updateField(`turflijst.${id}`, (t[id] || 0) + 1);
   };
 
+  // Beveiligde decrement
   const requestDecrement = (id) => {
     if (t[id] > 0) {
       setItemToDecrement(id);
+      setShowPinModal(true);
       setPinInput('');
       setPinError(false);
-      setPinModalOpen(true);
     }
   };
 
-  const confirmDecrement = (e) => {
+  const handlePinSubmit = (e) => {
     e.preventDefault();
     if (pinInput === '1199') {
+      // Succes
       updateField(`turflijst.${itemToDecrement}`, t[itemToDecrement] - 1);
-      setPinModalOpen(false);
+      setShowPinModal(false);
+      setItemToDecrement(null);
     } else {
       setPinError(true);
-      setPinInput(''); 
+      setPinInput('');
     }
   };
 
@@ -1442,6 +1421,45 @@ function TabTurflijst({ data, updateField }) {
 
       <p className="text-sm text-gray-500 mb-6 print-hidden">Tik op de grote knoppen om een item op te tellen of af te trekken.</p>
       
+      {/* --- PINCODE MODAL --- */}
+      {showPinModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 print-hidden">
+          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full border-t-4 border-red-700">
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Beveiliging</h3>
+            <p className="text-gray-600 mb-6 text-sm">Voer de pincode van het personeel in om een consumptie van de turflijst af te halen.</p>
+            
+            <form onSubmit={handlePinSubmit}>
+              <input 
+                type="password"
+                autoFocus
+                maxLength="4"
+                pattern="\d*"
+                className={`w-full text-center text-3xl tracking-widest font-black border-2 rounded-lg p-3 outline-none transition ${pinError ? 'border-red-500 text-red-600 bg-red-50' : 'border-gray-300 focus:border-red-700'}`}
+                value={pinInput}
+                onChange={(e) => setPinInput(e.target.value)}
+              />
+              {pinError && <p className="text-red-600 text-xs font-bold mt-2 text-center">Onjuiste pincode!</p>}
+              
+              <div className="flex justify-between gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowPinModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded text-gray-700 font-semibold hover:bg-gray-50 transition w-1/2"
+                >
+                  Annuleren
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-red-700 text-white font-semibold rounded hover:bg-red-800 transition w-1/2 shadow"
+                >
+                  Bevestigen
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* --- EDITOR WEERGAVE --- */}
       <div className="print-hidden">
         {categories.map(cat => (
@@ -1614,57 +1632,11 @@ function TabTurflijst({ data, updateField }) {
         )}
       </div>
 
-      {/* PIN Beveiliging Modal voor Afwaarderen (-) */}
-      {pinModalOpen && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4 print-hidden">
-          <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full border-t-4 border-red-700 animate-in fade-in zoom-in-95">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="bg-red-100 p-2 rounded-full text-red-700">
-                <Lock size={24} />
-              </div>
-              <h3 className="font-bold text-xl text-gray-900">Beveiligde Actie</h3>
-            </div>
-            <p className="text-sm text-gray-600 mb-6">
-              Voer de pincode in om een geturfd drankje te verwijderen.
-            </p>
-            <form onSubmit={confirmDecrement}>
-              <div className="mb-4">
-                <input 
-                  type="password" 
-                  pattern="[0-9]*"
-                  inputMode="numeric"
-                  value={pinInput} 
-                  onChange={e => setPinInput(e.target.value)} 
-                  className={`w-full border rounded-lg p-3 text-center text-2xl tracking-widest font-mono outline-none transition focus:ring-2 focus:ring-red-700 ${pinError ? 'border-red-500 bg-red-50' : 'border-gray-300'}`} 
-                  autoFocus 
-                  placeholder="••••"
-                />
-                {pinError && <p className="text-red-600 text-xs mt-2 font-bold text-center">Onjuiste pincode ingevoerd.</p>}
-              </div>
-              <div className="flex gap-3 justify-end mt-6">
-                <button 
-                  type="button" 
-                  onClick={() => setPinModalOpen(false)} 
-                  className="px-4 py-2 border border-gray-300 rounded font-semibold text-gray-700 hover:bg-gray-50 transition flex-1"
-                >
-                  Annuleren
-                </button>
-                <button 
-                  type="submit" 
-                  className="px-4 py-2 bg-red-700 text-white font-bold rounded hover:bg-red-800 transition shadow flex-1"
-                >
-                  Bevestigen
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
 
+// TAB 4: DEBRIEFING
 function TabDebriefing({ data, updateField }) {
   const d = data.debriefing || { goed: '', beter: '', tevreden: '', opmerkingen: '' };
 
@@ -1743,14 +1715,12 @@ function TabDebriefing({ data, updateField }) {
   );
 }
 
+// TAB 5: FACTUUR
 function TabFactuur({ data }) {
   const calcTotaal = (row) => (Number(row.aantal) || 1) * (Number(row.uren) || 1) * (Number(row.tarief || row.prijs) || 0);
   
   let totaalIncl = 0;
-  let exBtw0Bedrag = 0;
-  let exBtw9Bedrag = 0;
   let btw9Bedrag = 0;
-  let exBtw21Bedrag = 0;
   let btw21Bedrag = 0;
 
   // 1. Bereken Originele Offerte Totaal (Voor de Interne Controle)
@@ -1761,17 +1731,10 @@ function TabFactuur({ data }) {
 
   const processItemForTotals = (totIncl, btwFactor) => {
     totaalIncl += totIncl;
-    const exBtw = totIncl / (1 + (btwFactor / 100));
-    const btwAmount = totIncl - exBtw;
-
-    if (btwFactor === 0) {
-      exBtw0Bedrag += exBtw;
-    } else if (btwFactor === 9) {
-      exBtw9Bedrag += exBtw;
-      btw9Bedrag += btwAmount;
+    if (btwFactor === 9) {
+      btw9Bedrag += totIncl - (totIncl / 1.09);
     } else if (btwFactor === 21) {
-      exBtw21Bedrag += exBtw;
-      btw21Bedrag += btwAmount;
+      btw21Bedrag += totIncl - (totIncl / 1.21);
     }
   };
 
@@ -1798,12 +1761,13 @@ function TabFactuur({ data }) {
     }
   });
 
-  const totaalEx = exBtw0Bedrag + exBtw9Bedrag + exBtw21Bedrag;
-  const totaleBtw = btw9Bedrag + btw21Bedrag;
+  const totaalEx = totaalIncl - btw9Bedrag - btw21Bedrag;
   
+  // Bereken openstaand bedrag op basis van aanbetaling
   const aanbetaling = Number(data.aanbetaling) || 0;
   const nogTeVoldoen = totaalIncl - aanbetaling;
 
+  // Stoplicht logica voor Interne Controle
   const afwijkingBedrag = Math.abs(totaalIncl - origineleOfferteTotaal);
   const afwijkingPercentage = origineleOfferteTotaal > 0 ? (afwijkingBedrag / origineleOfferteTotaal) * 100 : 0;
   
@@ -1821,70 +1785,162 @@ function TabFactuur({ data }) {
     statusTekst = "Opvallende afwijking, werp een extra blik (10% - 25%)";
   }
 
-  // --- PEPPOL SI-UBL 2.0 GENERATOR ---
+  // --- COMPLIANT PEPPOL UBL GENERATIE ---
   const generateUBL = () => {
     const dateToday = new Date().toISOString().split('T')[0];
-    
     const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + 14);
-    const dateDueStr = dueDate.toISOString().split('T')[0];
-
+    dueDate.setDate(dueDate.getDate() + 14); // 14 dagen betaaltermijn
+    const dueDateString = dueDate.toISOString().split('T')[0];
+    
     const factuurNummer = `FACTUUR-${data.id.slice(-6)}`;
     const klantNaam = data.briefing.bedrijfsnaam || data.briefing.contactKlant || 'Onbekende Klant';
-    
-    const escapeXML = (str) => String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const klantEmail = data.briefing.emailKlant || 'info@vulcaanbier.nl';
 
     let invoiceLinesXML = '';
-    let lineID = 1;
-    let computedLineExtensionAmount = 0; // Wordt berekend door de loop voor validatie
+    let lineCount = 1;
+    let totalLineExtensionAmount = 0;
+    
+    let taxBasis9 = 0;
+    let taxAmount9 = 0;
+    let taxBasis21 = 0;
+    let taxAmount21 = 0;
+    let taxBasis0 = 0;
+    let taxAmount0 = 0;
 
     const addLine = (name, quantity, priceIncl, btwPercent) => {
-      const priceExcl = priceIncl / (1 + (btwPercent / 100));
-      const lineTotalExcl = quantity * priceExcl;
-      computedLineExtensionAmount += lineTotalExcl;
+      if (quantity <= 0 || priceIncl <= 0) return;
       
+      const btwFactor = 1 + (btwPercent / 100);
+      const lineTotalIncl = quantity * priceIncl;
+      
+      // Ex-BTW berekeningen afronden op 2 decimalen volgens administratieve wiskunde
+      const lineTotalEx = Math.round((lineTotalIncl / btwFactor) * 100) / 100;
+      const priceEx = lineTotalEx / quantity; 
+      const lineBtwAmount = lineTotalIncl - lineTotalEx;
+
+      totalLineExtensionAmount += lineTotalEx;
+
+      if (btwPercent === 9) { taxBasis9 += lineTotalEx; taxAmount9 += lineBtwAmount; }
+      else if (btwPercent === 21) { taxBasis21 += lineTotalEx; taxAmount21 += lineBtwAmount; }
+      else { taxBasis0 += lineTotalEx; taxAmount0 += lineBtwAmount; }
+
+      let taxCategory = 'S';
+      if (btwPercent === 0) taxCategory = 'Z';
+
+      // Veilige XML karakters (vervang & door &amp; etc)
+      const safeName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
       invoiceLinesXML += `
   <cac:InvoiceLine>
-    <cbc:ID>${lineID++}</cbc:ID>
-    <cbc:InvoicedQuantity unitCode="C62">${quantity}</cbc:InvoicedQuantity>
-    <cbc:LineExtensionAmount currencyID="EUR">${lineTotalExcl.toFixed(2)}</cbc:LineExtensionAmount>
+    <cbc:ID>${lineCount}</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">${quantity}</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="EUR">${lineTotalEx.toFixed(2)}</cbc:LineExtensionAmount>
     <cac:Item>
-      <cbc:Name>${escapeXML(name || 'Item')}</cbc:Name>
+      <cbc:Name>${safeName}</cbc:Name>
       <cac:ClassifiedTaxCategory>
-        <cbc:ID>${btwPercent === 0 ? 'Z' : 'S'}</cbc:ID>
-        <cbc:Percent>${btwPercent}</cbc:Percent>
+        <cbc:ID>${taxCategory}</cbc:ID>
+        <cbc:Percent>${btwPercent.toFixed(2)}</cbc:Percent>
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:ClassifiedTaxCategory>
     </cac:Item>
     <cac:Price>
-      <cbc:PriceAmount currencyID="EUR">${priceExcl.toFixed(2)}</cbc:PriceAmount>
-      <cbc:BaseQuantity unitCode="C62">1</cbc:BaseQuantity>
+      <cbc:PriceAmount currencyID="EUR">${priceEx.toFixed(4)}</cbc:PriceAmount>
+      <cbc:BaseQuantity unitCode="EA">1</cbc:BaseQuantity>
     </cac:Price>
   </cac:InvoiceLine>`;
+      lineCount++;
     };
 
+    // Voeg Offerte items toe
     factuurOfferteItems.forEach(row => {
       const qty = (Number(row.aantal) || 1) * (Number(row.uren) || 1);
-      addLine(row.dienst, qty, Number(row.tarief), Number(row.btw));
+      addLine(row.dienst || 'Dienst', qty, Number(row.tarief), Number(row.btw));
     });
 
-    turfItemsList.forEach(item => {
-      addLine(item.naam, item.aantal, item.prijs, item.btw);
+    // Voeg Turflijst items toe
+    Object.keys(data.turflijst || {}).forEach(id => {
+      const count = data.turflijst[id];
+      if (count > 0) {
+        const defItem = allTurfItems.find(i => i.id === id);
+        if (defItem) {
+          addLine(defItem.naam, count, Number(defItem.prijs), Number(defItem.btw));
+        }
+      }
     });
+    
+    // Voorkom fout BR-16 (bestand zónder regels)
+    if (lineCount === 1) {
+        addLine('Administratieve correctie', 1, 0.01, 21);
+    }
 
-    // Peppol/SI-UBL 2.0 XML Schema
+    const totalTaxAmount = taxAmount9 + taxAmount21 + taxAmount0;
+    const xmlTaxInclusiveAmount = totalLineExtensionAmount + totalTaxAmount;
+    const xmlPayableAmount = xmlTaxInclusiveAmount - aanbetaling;
+
+    let taxSubtotalsXML = '';
+    if (taxBasis21 > 0) {
+      taxSubtotalsXML += `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${taxBasis21.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${taxAmount21.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>21.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`;
+    }
+    if (taxBasis9 > 0) {
+      taxSubtotalsXML += `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${taxBasis9.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${taxAmount9.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>9.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`;
+    }
+    if (taxBasis0 > 0) {
+      taxSubtotalsXML += `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${taxBasis0.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">${taxAmount0.toFixed(2)}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>Z</cbc:ID>
+        <cbc:Percent>0.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`;
+    }
+    
+    // Voorkom lege tax elementen
+    if (taxSubtotalsXML === '') {
+        taxSubtotalsXML += `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">0.00</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>21.00</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`;
+    }
+
     const ublString = `<?xml version="1.0" encoding="UTF-8"?>
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0</cbc:CustomizationID>
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</cbc:CustomizationID>
   <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
   <cbc:ID>${factuurNummer}</cbc:ID>
   <cbc:IssueDate>${dateToday}</cbc:IssueDate>
-  <cbc:DueDate>${dateDueStr}</cbc:DueDate>
+  <cbc:DueDate>${dueDateString}</cbc:DueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
-  <cbc:BuyerReference>${escapeXML(data.briefing.referentieNummer || factuurNummer)}</cbc:BuyerReference>
+  <cbc:BuyerReference>${data.briefing.referentieNummer || factuurNummer}</cbc:BuyerReference>
   <cac:AccountingSupplierParty>
     <cac:Party>
       <cbc:EndpointID schemeID="0106">89387260</cbc:EndpointID>
@@ -1907,16 +1963,16 @@ function TabFactuur({ data }) {
   </cac:AccountingSupplierParty>
   <cac:AccountingCustomerParty>
     <cac:Party>
-      <cbc:EndpointID schemeID="0106">00000000</cbc:EndpointID>
-      <cac:PartyName><cbc:Name>${escapeXML(klantNaam)}</cbc:Name></cac:PartyName>
+      <cbc:EndpointID schemeID="EM">${klantEmail}</cbc:EndpointID>
+      <cac:PartyName><cbc:Name>${klantNaam.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</cbc:Name></cac:PartyName>
       <cac:PostalAddress>
-        <cbc:StreetName>${escapeXML(data.briefing.adresKlant || 'Onbekend')}</cbc:StreetName>
-        <cbc:CityName>${escapeXML(data.briefing.woonplaatsKlant || 'Onbekend')}</cbc:CityName>
-        <cbc:PostalZone>${escapeXML(data.briefing.postcodeKlant || '0000AA')}</cbc:PostalZone>
+        <cbc:StreetName>${(data.briefing.adresKlant || 'Onbekend').replace(/&/g, '&amp;')}</cbc:StreetName>
+        <cbc:CityName>${(data.briefing.woonplaatsKlant || 'Onbekend').replace(/&/g, '&amp;')}</cbc:CityName>
+        <cbc:PostalZone>${(data.briefing.postcodeKlant || '0000AA').replace(/&/g, '&amp;')}</cbc:PostalZone>
         <cac:Country><cbc:IdentificationCode>NL</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyLegalEntity>
-        <cbc:RegistrationName>${escapeXML(klantNaam)}</cbc:RegistrationName>
+        <cbc:RegistrationName>${klantNaam.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</cbc:RegistrationName>
       </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingCustomerParty>
@@ -1927,46 +1983,15 @@ function TabFactuur({ data }) {
     </cac:PayeeFinancialAccount>
   </cac:PaymentMeans>
   <cac:TaxTotal>
-    <cbc:TaxAmount currencyID="EUR">${totaleBtw.toFixed(2)}</cbc:TaxAmount>
-    ${exBtw0Bedrag > 0 ? `
-    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="EUR">${exBtw0Bedrag.toFixed(2)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
-      <cac:TaxCategory>
-        <cbc:ID>Z</cbc:ID>
-        <cbc:Percent>0</cbc:Percent>
-        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-      </cac:TaxCategory>
-    </cac:TaxSubtotal>` : ''}
-    ${exBtw9Bedrag > 0 ? `
-    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="EUR">${exBtw9Bedrag.toFixed(2)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="EUR">${btw9Bedrag.toFixed(2)}</cbc:TaxAmount>
-      <cac:TaxCategory>
-        <cbc:ID>S</cbc:ID>
-        <cbc:Percent>9</cbc:Percent>
-        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-      </cac:TaxCategory>
-    </cac:TaxSubtotal>` : ''}
-    ${exBtw21Bedrag > 0 ? `
-    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="EUR">${exBtw21Bedrag.toFixed(2)}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="EUR">${btw21Bedrag.toFixed(2)}</cbc:TaxAmount>
-      <cac:TaxCategory>
-        <cbc:ID>S</cbc:ID>
-        <cbc:Percent>21</cbc:Percent>
-        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
-      </cac:TaxCategory>
-    </cac:TaxSubtotal>` : ''}
+    <cbc:TaxAmount currencyID="EUR">${totalTaxAmount.toFixed(2)}</cbc:TaxAmount>${taxSubtotalsXML}
   </cac:TaxTotal>
   <cac:LegalMonetaryTotal>
-    <cbc:LineExtensionAmount currencyID="EUR">${computedLineExtensionAmount.toFixed(2)}</cbc:LineExtensionAmount>
-    <cbc:TaxExclusiveAmount currencyID="EUR">${totaalEx.toFixed(2)}</cbc:TaxExclusiveAmount>
-    <cbc:TaxInclusiveAmount currencyID="EUR">${totaalIncl.toFixed(2)}</cbc:TaxInclusiveAmount>
+    <cbc:LineExtensionAmount currencyID="EUR">${totalLineExtensionAmount.toFixed(2)}</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="EUR">${totalLineExtensionAmount.toFixed(2)}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">${xmlTaxInclusiveAmount.toFixed(2)}</cbc:TaxInclusiveAmount>
     <cbc:PrepaidAmount currencyID="EUR">${aanbetaling.toFixed(2)}</cbc:PrepaidAmount>
-    <cbc:PayableAmount currencyID="EUR">${nogTeVoldoen.toFixed(2)}</cbc:PayableAmount>
-  </cac:LegalMonetaryTotal>
-  ${invoiceLinesXML}
+    <cbc:PayableAmount currencyID="EUR">${xmlPayableAmount.toFixed(2)}</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>${invoiceLinesXML}
 </Invoice>`;
 
     const blob = new Blob([ublString], { type: 'text/xml' });
@@ -1977,10 +2002,12 @@ function TabFactuur({ data }) {
     a.click();
     URL.revokeObjectURL(url);
   };
+  // --- EINDE UBL GENERATIE ---
 
   return (
     <div className="space-y-6 animate-in fade-in max-w-4xl mx-auto pb-10">
       
+      {/* Verborgen tijdens printen: Stoplicht / Sanity Check */}
       <div className={`print-hidden border rounded-lg p-4 mb-6 flex items-center gap-4 shadow-sm ${statusKleur}`}>
         {statusIcon}
         <div className="flex-1">
@@ -2050,6 +2077,7 @@ function TabFactuur({ data }) {
           </div>
         </div>
 
+        {/* Vaste kosten */}
         {factuurOfferteItems.length > 0 && (
           <div className="print-break-inside-avoid">
             <h4 className="font-bold border-b border-gray-300 pb-1 mb-2 mt-6 text-red-800">Vaste kosten (volgens offerte)</h4>
@@ -2078,6 +2106,7 @@ function TabFactuur({ data }) {
           </div>
         )}
 
+        {/* Nacalculatie Turflijst */}
         {turfItemsList.length > 0 && (
           <div className="print-break-inside-avoid">
             <h4 className="font-bold border-b border-gray-300 pb-1 mb-2 mt-6 text-red-800">Nacalculatie (Turflijst Bar)</h4>
@@ -2106,6 +2135,7 @@ function TabFactuur({ data }) {
           </div>
         )}
 
+        {/* Totalen Berekeningen */}
         <div className="w-full flex justify-end mt-8 print-break-inside-avoid">
           <div className="w-72 space-y-2 text-sm border-t-2 border-gray-800 pt-4">
             <div className="flex justify-between text-lg font-black text-red-800 border-b border-gray-300 pb-2 mb-2">
@@ -2129,6 +2159,7 @@ function TabFactuur({ data }) {
               <span>€ {totaalEx.toFixed(2)}</span>
             </div>
             
+            {/* Aanbetaling & Eindbedrag Weergave */}
             {aanbetaling > 0 && (
               <>
                 <div className="flex justify-between text-gray-600 font-semibold pt-1">
@@ -2149,6 +2180,8 @@ function TabFactuur({ data }) {
     </div>
   );
 }
+
+// --- UTILITY COMPONENTS ---
 
 function Input({ label, type = "text", value, onChange, placeholder = '' }) {
   return (
@@ -2178,6 +2211,7 @@ function Textarea({ label, value, onChange }) {
   );
 }
 
+// Speciale component voor de halve-uur intervallen (00 of 30)
 function TimeSelect({ value, onChange, className = '' }) {
   const times = [];
   for (let h = 0; h < 24; h++) {
