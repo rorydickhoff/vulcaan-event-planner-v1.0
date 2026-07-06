@@ -1845,6 +1845,12 @@ function TabFactuur({ data }) {
   // Genereer UBL XML voor Exact Online
   const generateUBL = () => {
     const dateToday = new Date().toISOString().split('T')[0];
+    
+    // Stel een vervaldatum in (Standaard +14 dagen)
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 14);
+    const dateDueStr = dueDate.toISOString().split('T')[0];
+
     const factuurNummer = `FACTUUR-${data.id.slice(-6)}`;
     const klantNaam = data.briefing.bedrijfsnaam || data.briefing.contactKlant || 'Onbekende Klant';
     
@@ -1865,7 +1871,7 @@ function TabFactuur({ data }) {
     <cbc:InvoicedQuantity unitCode="C62">${quantity}</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount currencyID="EUR">${lineTotalExcl.toFixed(2)}</cbc:LineExtensionAmount>
     <cac:Item>
-      <cbc:Name>${escapeXML(name)}</cbc:Name>
+      <cbc:Name>${escapeXML(name || 'Item')}</cbc:Name>
       <cac:ClassifiedTaxCategory>
         <cbc:ID>${btwPercent === 0 ? 'Z' : 'S'}</cbc:ID>
         <cbc:Percent>${btwPercent}</cbc:Percent>
@@ -1906,35 +1912,50 @@ function TabFactuur({ data }) {
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
   <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
   <cbc:ID>${factuurNummer}</cbc:ID>
   <cbc:IssueDate>${dateToday}</cbc:IssueDate>
+  <cbc:DueDate>${dateDueStr}</cbc:DueDate>
   <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
   <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
   <cac:AccountingSupplierParty>
     <cac:Party>
+      <cbc:EndpointID schemeID="0106">89387260</cbc:EndpointID>
       <cac:PartyName><cbc:Name>Brouwerij Vulcaan</cac:Name></cac:PartyName>
       <cac:PostalAddress>
-        <cbc:StreetName>Oosthavenkade</cbc:StreetName>
-        <cbc:BuildingNumber>90/92</cbc:BuildingNumber>
+        <cbc:StreetName>Oosthavenkade 90/92</cbc:StreetName>
         <cbc:CityName>Vlaardingen</cbc:CityName>
         <cbc:PostalZone>3134 KA</cbc:PostalZone>
         <cac:Country><cbc:IdentificationCode>NL</cbc:IdentificationCode></cac:Country>
       </cac:PostalAddress>
       <cac:PartyTaxScheme>
-        <cbc:CompanyID>89387260</cbc:CompanyID>
-        <cbc:TaxID>NL864965497B01</cbc:TaxID>
+        <cbc:CompanyID>NL864965497B01</cbc:CompanyID>
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:PartyTaxScheme>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>Brouwerij Vulcaan</cbc:RegistrationName>
+        <cbc:CompanyID schemeID="0106">89387260</cbc:CompanyID>
+      </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingSupplierParty>
   <cac:AccountingCustomerParty>
     <cac:Party>
       <cac:PartyName><cbc:Name>${escapeXML(klantNaam)}</cbc:Name></cac:PartyName>
+      <cac:PostalAddress>
+        <cbc:StreetName>${escapeXML(data.briefing.adresKlant || 'Onbekend')}</cbc:StreetName>
+        <cbc:CityName>${escapeXML(data.briefing.woonplaatsKlant || 'Onbekend')}</cbc:CityName>
+        <cbc:PostalZone>${escapeXML(data.briefing.postcodeKlant || '0000AA')}</cbc:PostalZone>
+        <cac:Country><cbc:IdentificationCode>NL</cbc:IdentificationCode></cac:Country>
+      </cac:PostalAddress>
+      <cac:PartyLegalEntity>
+        <cbc:RegistrationName>${escapeXML(klantNaam)}</cbc:RegistrationName>
+      </cac:PartyLegalEntity>
     </cac:Party>
   </cac:AccountingCustomerParty>
   <cac:PaymentMeans>
+    <cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>
     <cac:PayeeFinancialAccount>
-      <cbc:ID>NL54 ABNA 0124 0244 67</cbc:ID>
+      <cbc:ID>NL54ABNA0124024467</cbc:ID>
     </cac:PayeeFinancialAccount>
   </cac:PaymentMeans>
   <cac:TaxTotal>
@@ -1956,6 +1977,16 @@ function TabFactuur({ data }) {
       <cac:TaxCategory>
         <cbc:ID>S</cbc:ID>
         <cbc:Percent>21</cbc:Percent>
+        <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>` : ''}
+    ${(btw9Bedrag === 0 && btw21Bedrag === 0) ? `
+    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="EUR">${totaalEx.toFixed(2)}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="EUR">0.00</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>Z</cbc:ID>
+        <cbc:Percent>0</cbc:Percent>
         <cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>
       </cac:TaxCategory>
     </cac:TaxSubtotal>` : ''}
