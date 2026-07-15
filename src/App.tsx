@@ -154,16 +154,17 @@ export default function App() {
     setCurrentEvent(null);
   };
 
-  // 3. Opslaan in de Cloud
+  // 3. Opslaan in de Cloud (Nu async zodat we de status kunnen afvangen)
   const saveEvent = async (updatedEvent) => {
     if (!user) return;
     try {
       const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'events', updatedEvent.id);
       await setDoc(docRef, updatedEvent);
+      // Let op: we wijzigen currentEvent, zodat de indicator weet dat het opgeslagen is
+      setCurrentEvent(updatedEvent);
     } catch (error) {
       console.error("Fout bij opslaan evenement:", error);
     }
-    setCurrentEvent(updatedEvent);
   };
 
   // 4. Snelle updates in de Cloud (voor de dashboard acties)
@@ -316,7 +317,7 @@ export default function App() {
       `}</style>
 
       {/* Header */}
-      <header className="bg-red-700 text-white p-4 shadow-md flex items-center justify-between print-hidden">
+      <header className="bg-red-700 text-white p-4 shadow-md flex items-center justify-between print-hidden relative z-20">
         <div className="flex items-center gap-3">
           <img 
             src="https://vulcaanbier.nl/Portals/2/Afbeeldingen/logo_pagelayout.png?ver=1y2YvKCvJSpqot8lBNhjog%3D%3D" 
@@ -346,7 +347,7 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="p-4 md:p-6 max-w-7xl mx-auto print-wrapper">
+      <main className="p-4 md:p-6 max-w-7xl mx-auto print-wrapper relative z-10">
         {!currentEvent ? (
           <Dashboard 
             events={events} 
@@ -576,27 +577,48 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
 function EventEditor({ event, onSave, onClose }) {
   const [activeTab, setActiveTab] = useState(TABS.BRIEFING);
   const [formData, setFormData] = useState(event);
+  const [isSaving, setIsSaving] = useState(false);
 
-  useEffect(() => { setFormData(event); }, [event]);
+  // Alleen bij het allereerste openen (of wisselen van event) de data laden.
+  // We updaten formData NIET meer klakkeloos als 'event' veranderd, om te 
+  // voorkomen dat je eigen getypte letters verdwijnen na een auto-save!
+  useEffect(() => { 
+    if(formData.id !== event.id) {
+        setFormData(event); 
+    }
+  }, [event.id]);
 
-  // Automatisch opslaan functionaliteit toegevoegd
+  const hasUnsavedChanges = JSON.stringify(formData) !== JSON.stringify(event);
+
+  // Automatisch opslaan na 1,5 seconde (Debounce)
   useEffect(() => {
-    const handler = setTimeout(() => {
-      // Voorkom onnodige saves als er niks veranderd is ten opzichte van het bron-event (simpele check)
-      if (JSON.stringify(formData) !== JSON.stringify(event)) {
-        onSave(formData);
-      }
-    }, 1500); // Wacht 1,5s na laatste toetsaanslag
+    if (!hasUnsavedChanges) return;
+
+    const handler = setTimeout(async () => {
+      setIsSaving(true);
+      await onSave(formData);
+      setIsSaving(false);
+    }, 1500);
 
     return () => clearTimeout(handler);
-  }, [formData]);
+  }, [formData, hasUnsavedChanges, onSave]);
+
+  const handleManualSave = async () => {
+    setIsSaving(true);
+    await onSave(formData);
+    setIsSaving(false);
+  };
 
   const updateField = (path, value) => {
     setFormData(prev => {
-      const newData = { ...prev };
+      // DEEP CLONE: Essentieel voor geneste arrays en objecten zoals turflijst
+      // Hierdoor wordt iedere klik, hoe diep ook, altijd als wijziging herkend.
+      const newData = JSON.parse(JSON.stringify(prev)); 
+      
       const keys = path.split('.');
       let current = newData;
       for (let i = 0; i < keys.length - 1; i++) {
+        if (!current[keys[i]]) current[keys[i]] = {}; // Safety fallback
         current = current[keys[i]];
       }
       current[keys[keys.length - 1]] = value;
@@ -604,12 +626,13 @@ function EventEditor({ event, onSave, onClose }) {
     });
   };
 
-  const isSaving = JSON.stringify(formData) !== JSON.stringify(event);
-
+  // We gebruiken "items-start" zodat de linker menubalk niet uitrekt maar juist "sticky" kan worden
   return (
-    <div className="bg-white rounded-lg shadow-lg overflow-hidden flex flex-col md:flex-row min-h-[80vh] print-wrapper">
-      {/* Sidebar Navigation */}
-      <div className="w-full md:w-64 bg-gray-50 border-r flex flex-col print-hidden relative">
+    <div className="bg-white rounded-lg shadow-lg flex flex-col md:flex-row items-start min-h-[80vh] print-wrapper">
+      
+      {/* Sidebar Navigation - Nu met "Sticky" layout waardoor hij vast blijft staan op het scherm */}
+      <div className="w-full md:w-64 bg-gray-50 border-r border-b md:border-b-0 flex flex-col print-hidden md:sticky md:top-4 md:h-[calc(100vh-2rem)] z-10 shadow-[2px_0_10px_rgba(0,0,0,0.05)]">
+        
         <div className="p-4 border-b">
           <button 
             type="button"
@@ -655,7 +678,8 @@ function EventEditor({ event, onSave, onClose }) {
             </select>
           </div>
         </div>
-        <nav className="flex-1 p-2 space-y-1">
+
+        <nav className="p-2 space-y-1 overflow-y-auto">
           <TabButton icon={<FileText size={18}/>} label="1. Briefing & Info" active={activeTab === TABS.BRIEFING} onClick={() => setActiveTab(TABS.BRIEFING)} />
           <TabButton icon={<Receipt size={18}/>} label="2. Offerte" active={activeTab === TABS.OFFERTE} onClick={() => setActiveTab(TABS.OFFERTE)} />
           <TabButton icon={<Beer size={18}/>} label="3. Turflijst (Bar)" active={activeTab === TABS.TURFLIJST} onClick={() => setActiveTab(TABS.TURFLIJST)} />
@@ -663,23 +687,42 @@ function EventEditor({ event, onSave, onClose }) {
           <TabButton icon={<CheckCircle size={18}/>} label="5. Facturatie" active={activeTab === TABS.FACTUUR} onClick={() => setActiveTab(TABS.FACTUUR)} />
         </nav>
         
-        {/* Autosave indicator */}
-        <div className="p-4 border-t bg-gray-100 flex items-center justify-center text-sm font-semibold">
-          {isSaving ? (
-            <span className="text-gray-500 flex items-center gap-2">
-              <div className="w-3 h-3 border-2 border-t-gray-500 border-gray-300 rounded-full animate-spin"></div>
-              Aan het opslaan...
-            </span>
-          ) : (
-            <span className="text-green-600 flex items-center gap-2">
-              <CheckCircle size={16} /> Opgeslagen in cloud
-            </span>
-          )}
+        {/* Sticky Bottom Area: Handmatige Opslag en Status */}
+        <div className="mt-auto border-t bg-gray-100 p-4 flex flex-col gap-3 pb-6">
+          <button 
+            type="button" 
+            onClick={handleManualSave}
+            disabled={!hasUnsavedChanges || isSaving}
+            className={`w-full py-2.5 rounded flex items-center justify-center gap-2 transition font-bold shadow ${
+                hasUnsavedChanges 
+                ? 'bg-red-700 hover:bg-red-800 text-white cursor-pointer' 
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+            }`}
+          >
+            <Save size={18} /> {isSaving ? 'Opslaan...' : 'Handmatig Opslaan'}
+          </button>
+
+          <div className="text-sm font-semibold flex items-center justify-center text-center">
+            {isSaving ? (
+              <span className="text-blue-600 flex items-center gap-2">
+                <div className="w-3 h-3 border-2 border-t-blue-600 border-blue-200 rounded-full animate-spin"></div>
+                Bezig met opslaan...
+              </span>
+            ) : hasUnsavedChanges ? (
+              <span className="text-yellow-600 flex items-center gap-2">
+                <AlertTriangle size={16} /> Wacht op opslaan...
+              </span>
+            ) : (
+              <span className="text-green-600 flex items-center gap-2">
+                <CheckCircle size={16} /> Opgeslagen in cloud
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Content Area */}
-      <div className="flex-1 p-6 overflow-y-auto bg-gray-50/50 print-wrapper relative">
+      <div className="flex-1 p-6 print-wrapper w-full">
         {activeTab === TABS.BRIEFING && <TabBriefing data={formData} updateField={updateField} />}
         {activeTab === TABS.OFFERTE && <TabOfferte data={formData} updateField={updateField} />}
         {activeTab === TABS.TURFLIJST && <TabTurflijst data={formData} updateField={updateField} />}
