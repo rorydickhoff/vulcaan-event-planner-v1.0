@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Calendar, Clock, FileText, Beer, Receipt, 
   Plus, Trash2, ChevronLeft, Save, CheckCircle, Edit,
-  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings, AlertTriangle
+  Printer, MessageSquare, CheckSquare, Paperclip, FileCode, LogOut, Settings, AlertTriangle,
+  TrendingUp, Archive, PieChart, DollarSign, BarChart2, RefreshCcw, Package
 } from 'lucide-react';
 
 // --- FIREBASE IMPORTS (CLOUD DATABASE & AUTH) ---
@@ -59,12 +60,69 @@ const PREDEFINED_ACTIONS = [
   "FACTUUR VERSTUREN"
 ];
 
+// --- HELPER FUNCTIE: FINANCIELE BEREKENINGEN ---
+function calculateEventFinancials(event) {
+  let offerteTotaal = 0;
+  let offerteHoreca = 0;
+  let offerteOverig = 0;
+  
+  // Simpele logica om Horeca vs Diensten te scheiden op basis van trefwoorden
+  const isHoreca = (text = '') => {
+    const t = text.toLowerCase();
+    return t.includes('drank') || t.includes('bier') || t.includes('wijn') || t.includes('cava') ||
+           t.includes('koffie') || t.includes('thee') || t.includes('bitterbal') ||
+           t.includes('garnituur') || t.includes('plank') || t.includes('hap') || t.includes('consumptie');
+  };
+
+  (event.offerte || []).forEach(row => {
+     const rowTot = (Number(row.aantal)||1) * (Number(row.uren)||1) * (Number(row.tarief)||0);
+     offerteTotaal += rowTot;
+     if(isHoreca(row.dienst)) offerteHoreca += rowTot;
+     else offerteOverig += rowTot;
+  });
+
+  let factuurTotaal = 0;
+  let factuurHoreca = 0;
+  let factuurOverig = 0;
+
+  // 1. Offerte items die op factuur blijven
+  (event.offerte || []).filter(r => r.inFactuur !== false).forEach(row => {
+     const rowTot = (Number(row.aantal)||1) * (Number(row.uren)||1) * (Number(row.tarief)||0);
+     factuurTotaal += rowTot;
+     if(isHoreca(row.dienst)) factuurHoreca += rowTot;
+     else factuurOverig += rowTot;
+  });
+
+  // 2. Turflijst items (zijn per definitie 99% horeca)
+  const allTurfItems = [...DEFAULT_TURF_ITEMS, ...(event.extraTurfItems || [])];
+  Object.keys(event.turflijst || {}).forEach(id => {
+     const count = event.turflijst[id];
+     if(count > 0) {
+        const defItem = allTurfItems.find(i => i.id === id);
+        if(defItem) {
+           const rowTot = count * defItem.prijs;
+           factuurTotaal += rowTot;
+           factuurHoreca += rowTot; 
+        }
+     }
+  });
+
+  return {
+    offerteTotaal, offerteHoreca, offerteOverig,
+    factuurTotaal, factuurHoreca, factuurOverig
+  };
+}
+
+
 // --- MAIN APP COMPONENT ---
 export default function App() {
   const [events, setEvents] = useState([]);
   const [currentEvent, setCurrentEvent] = useState(null);
   const [eventToDelete, setEventToDelete] = useState(null);
   const [user, setUser] = useState(null);
+  
+  // Navigation State: 'dashboard', 'finance', 'archive'
+  const [currentView, setCurrentView] = useState('dashboard');
   
   // Login States
   const [authLoading, setAuthLoading] = useState(true);
@@ -118,6 +176,7 @@ export default function App() {
     try {
       await signOut(auth);
       setCurrentEvent(null);
+      setCurrentView('dashboard');
     } catch (error) {
       console.error("Logout fout:", error);
     }
@@ -201,6 +260,7 @@ export default function App() {
       datum: '',
       status: 'OPTIE',
       actie: '',
+      gearchiveerd: false, // Nieuwe flag voor het archief
       aanbetaling: 0,
       turflijstGecontroleerd: false,
       factuurVerzonden: false,
@@ -230,6 +290,7 @@ export default function App() {
       extraTurfItems: []
     };
     setCurrentEvent(newEvent);
+    setCurrentView('dashboard'); // Terug naar default view als je editor opent
   };
 
   // --- RENDER LOGIN SCHERM ALS NIET INGELOGD ---
@@ -322,7 +383,8 @@ export default function App() {
           <img 
             src="https://vulcaanbier.nl/Portals/2/Afbeeldingen/logo_pagelayout.png?ver=1y2YvKCvJSpqot8lBNhjog%3D%3D" 
             alt="Vulcaan Logo" 
-            className="h-10 object-contain bg-white p-1 rounded shadow-sm" 
+            className="h-10 object-contain bg-white p-1 rounded shadow-sm cursor-pointer" 
+            onClick={() => { setCurrentEvent(null); setCurrentView('dashboard'); }}
             onError={(e) => { e.target.style.display = 'none'; }}
           />
           <h1 className="text-2xl font-bold tracking-wider uppercase hidden sm:block">Vulcaan Event Manager</h1>
@@ -334,10 +396,10 @@ export default function App() {
               <LogOut size={12}/> Uitloggen
             </button>
           </div>
-          {currentEvent && (
+          {(currentEvent || currentView !== 'dashboard') && (
             <button 
               type="button"
-              onClick={closeEvent} 
+              onClick={() => { setCurrentEvent(null); setCurrentView('dashboard'); }} 
               className="flex items-center gap-2 hover:bg-red-800 px-3 py-1 rounded transition border border-transparent hover:border-red-500 font-semibold ml-2"
             >
               <ChevronLeft size={20} /> <span className="hidden sm:inline">Terug naar overzicht</span>
@@ -348,16 +410,26 @@ export default function App() {
 
       {/* Main Content */}
       <main className="p-4 md:p-6 max-w-7xl mx-auto print-wrapper relative z-10">
-        {!currentEvent ? (
+        {currentEvent ? (
+          <EventEditor event={currentEvent} onSave={saveEvent} onClose={closeEvent} />
+        ) : currentView === 'finance' ? (
+          <FinanceDashboard events={events} onClose={() => setCurrentView('dashboard')} />
+        ) : currentView === 'archive' ? (
+          <ArchiveDashboard 
+            events={events} 
+            onOpen={openEvent} 
+            onRestore={(id) => updateEventPartial(id, { gearchiveerd: false })}
+            onDelete={(ev) => setEventToDelete(ev)} 
+          />
+        ) : (
           <Dashboard 
             events={events} 
             onOpen={openEvent} 
             onCreate={createNewEvent} 
             onUpdateEvent={updateEventPartial}
-            onDelete={(ev) => setEventToDelete(ev)}
+            onOpenFinance={() => setCurrentView('finance')}
+            onOpenArchive={() => setCurrentView('archive')}
           />
-        ) : (
-          <EventEditor event={currentEvent} onSave={saveEvent} onClose={closeEvent} />
         )}
       </main>
 
@@ -365,9 +437,9 @@ export default function App() {
       {eventToDelete && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 print-hidden">
           <div className="bg-white rounded-lg shadow-xl p-6 max-w-md w-full border-t-4 border-red-600">
-            <h3 className="text-xl font-bold text-gray-900 mb-2">Weet je zeker dat je dit wilt verwijderen?</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">Definitief verwijderen?</h3>
             <p className="text-gray-600 mb-6">
-              Je staat op het punt het evenement <strong>"{eventToDelete.naam}"</strong> te verwijderen. De gegevens gaan permanent verloren en dit kan niet ongedaan worden gemaakt.
+              Je staat op het punt het evenement <strong>"{eventToDelete.naam}"</strong> permanent te verwijderen. Dit kan niet ongedaan worden gemaakt. Wil je het niet liever in het archief laten staan?
             </p>
             <div className="flex justify-end gap-3">
               <button
@@ -391,12 +463,15 @@ export default function App() {
 }
 
 // --- DASHBOARD COMPONENT ---
-function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
+function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onOpenFinance, onOpenArchive }) {
   const today = new Date().toISOString().split('T')[0];
 
-  const eventsVandaag = events.filter(e => e.datum === today);
-  const eventsToekomst = events.filter(e => e.datum > today || !e.datum).sort((a, b) => (a.datum || '9999').localeCompare(b.datum || '9999'));
-  const eventsVerleden = events.filter(e => e.datum && e.datum < today).sort((a, b) => b.datum.localeCompare(a.datum));
+  // We filteren gearchiveerde items UIT het standaard dashboard
+  const activeEvents = events.filter(e => !e.gearchiveerd);
+
+  const eventsVandaag = activeEvents.filter(e => e.datum === today);
+  const eventsToekomst = activeEvents.filter(e => e.datum > today || !e.datum).sort((a, b) => (a.datum || '9999').localeCompare(b.datum || '9999'));
+  const eventsVerleden = activeEvents.filter(e => e.datum && e.datum < today).sort((a, b) => b.datum.localeCompare(a.datum));
 
   const [customActionId, setCustomActionId] = useState(null);
   const [customActionText, setCustomActionText] = useState('');
@@ -416,6 +491,10 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
     }
     setCustomActionId(null);
   };
+
+  const handleArchive = (ev) => {
+    onUpdateEvent(ev.id, { gearchiveerd: true });
+  }
 
   const renderTable = (title, dataList, emptyMsg, headerColor) => (
     <div className="mb-8">
@@ -449,7 +528,7 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
                     </button>
                   </td>
                   <td className="p-4 text-gray-700">{ev.type}</td>
-                  <td className="p-4 text-gray-700">{ev.briefing.pax}</td>
+                  <td className="p-4 text-gray-700">{ev.briefing?.pax}</td>
                   <td className="p-4">
                     <select 
                       value={ev.status || 'OPTIE'} 
@@ -519,19 +598,20 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
                         </select>
                       )}
 
-                      {title === 'Verleden' && (
-                        <div title={(!ev.turflijstGecontroleerd || !ev.factuurVerzonden) ? "Factuur nog niet verzonden!" : ""}>
+                      {/* Archiveren knop i.p.v. verwijderen, beschikbaar in Verleden of Toekomst-Annulering */}
+                      {(title === 'Verleden' || ev.status === 'GEANNULEERD') && (
+                        <div title={(!ev.factuurVerzonden && ev.status !== 'GEANNULEERD') ? "Rond de factuur af om te kunnen archiveren!" : ""}>
                           <button
                             type="button"
-                            onClick={() => onDelete(ev)}
-                            disabled={!ev.turflijstGecontroleerd || !ev.factuurVerzonden}
+                            onClick={() => handleArchive(ev)}
+                            disabled={!ev.factuurVerzonden && ev.status !== 'GEANNULEERD'}
                             className={`text-sm font-bold transition flex items-center gap-1 ${
-                              (!ev.turflijstGecontroleerd || !ev.factuurVerzonden) 
+                              (!ev.factuurVerzonden && ev.status !== 'GEANNULEERD') 
                                 ? 'text-gray-400 cursor-not-allowed' 
-                                : 'text-red-600 hover:text-red-800'
+                                : 'text-blue-600 hover:text-blue-800'
                             }`}
                           >
-                            <Trash2 size={14}/> Verwijderen
+                            <Package size={14}/> Archiveren
                           </button>
                         </div>
                       )}
@@ -555,15 +635,31 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
 
   return (
     <div className="space-y-6 animate-in fade-in">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-6">
         <h2 className="text-3xl font-black text-gray-800">Overzicht Evenementen</h2>
-        <button 
-          type="button"
-          onClick={onCreate}
-          className="bg-red-700 hover:bg-red-800 text-white px-5 py-2.5 rounded shadow-lg flex items-center gap-2 transition font-bold"
-        >
-          <Plus size={20} /> Nieuwe Aanvraag
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button 
+            type="button"
+            onClick={onOpenArchive}
+            className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-4 py-2.5 rounded shadow-sm flex items-center gap-2 transition font-bold"
+          >
+            <Archive size={18} /> Archief
+          </button>
+          <button 
+            type="button"
+            onClick={onOpenFinance}
+            className="bg-green-700 hover:bg-green-800 text-white px-4 py-2.5 rounded shadow-lg flex items-center gap-2 transition font-bold"
+          >
+            <TrendingUp size={18} /> Financieel Overzicht
+          </button>
+          <button 
+            type="button"
+            onClick={onCreate}
+            className="bg-red-700 hover:bg-red-800 text-white px-5 py-2.5 rounded shadow-lg flex items-center gap-2 transition font-bold"
+          >
+            <Plus size={20} /> Nieuwe Aanvraag
+          </button>
+        </div>
       </div>
 
       {renderTable('Vandaag', eventsVandaag, 'Er zijn vandaag geen evenementen gepland.', 'bg-red-700 text-white')}
@@ -573,6 +669,273 @@ function Dashboard({ events, onOpen, onCreate, onUpdateEvent, onDelete }) {
   );
 }
 
+// --- ARCHIVE DASHBOARD COMPONENT ---
+function ArchiveDashboard({ events, onOpen, onRestore, onDelete }) {
+  const archivedEvents = events.filter(e => e.gearchiveerd).sort((a, b) => (b.datum || '0000').localeCompare(a.datum || '0000'));
+
+  return (
+    <div className="space-y-6 animate-in fade-in">
+      <div className="flex justify-between items-center mb-6 border-b pb-4">
+        <div>
+          <h2 className="text-3xl font-black text-gray-800 flex items-center gap-3">
+            <Archive className="text-gray-500" size={32} /> Archief
+          </h2>
+          <p className="text-gray-600 mt-1">Hier staan alle afgeronde of geannuleerde evenementen veilig bewaard.</p>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow overflow-hidden border border-gray-200">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[700px]">
+            <thead>
+              <tr className="bg-gray-100 border-b">
+                <th className="p-4 font-semibold text-gray-600">Datum</th>
+                <th className="p-4 font-semibold text-gray-600">Naam Evenement</th>
+                <th className="p-4 font-semibold text-gray-600">Type</th>
+                <th className="p-4 font-semibold text-gray-600">Status</th>
+                <th className="p-4 font-semibold text-gray-600 text-right">Acties</th>
+              </tr>
+            </thead>
+            <tbody>
+              {archivedEvents.map(ev => (
+                <tr key={ev.id} className="border-b hover:bg-gray-50 transition opacity-80">
+                  <td className="p-4 font-medium">{ev.datum || '-'}</td>
+                  <td className="p-4">
+                    <button onClick={() => onOpen(ev)} className="font-bold text-gray-700 hover:text-gray-900 hover:underline text-left text-lg">
+                      {ev.naam}
+                    </button>
+                  </td>
+                  <td className="p-4 text-gray-600">{ev.type}</td>
+                  <td className="p-4">
+                    <span className="px-2 py-1 rounded text-xs font-bold bg-gray-200 text-gray-700 uppercase">
+                      {ev.status}
+                    </span>
+                  </td>
+                  <td className="p-4 text-right">
+                    <div className="flex items-center justify-end gap-4">
+                      <button
+                        type="button"
+                        onClick={() => onRestore(ev.id)}
+                        className="text-sm font-bold text-blue-600 hover:text-blue-800 transition flex items-center gap-1"
+                      >
+                        <RefreshCcw size={14}/> Terugzetten
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onDelete(ev)}
+                        className="text-sm font-bold text-red-600 hover:text-red-800 transition flex items-center gap-1"
+                      >
+                        <Trash2 size={14}/> Verwijderen
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {archivedEvents.length === 0 && (
+                <tr>
+                  <td colSpan="5" className="p-8 text-center text-gray-500 italic">
+                    Het archief is momenteel leeg.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- FINANCE DASHBOARD COMPONENT ---
+function FinanceDashboard({ events }) {
+  const today = new Date().toISOString().split('T')[0];
+  const [includeOpties, setIncludeOpties] = useState(true);
+
+  // 1. Data splitsen: Alle actieve events (archief doen we ook mee voor historische data!)
+  const futureEvents = events.filter(e => e.datum >= today && e.status !== 'GEANNULEERD' && (!e.gearchiveerd || e.status === 'BEVESTIGD'));
+  const pastEvents = events.filter(e => e.datum < today && e.status !== 'GEANNULEERD');
+
+  // Conversie stats (Alle events)
+  const totalCreated = events.length;
+  const totalOptie = events.filter(e => e.status === 'OPTIE').length;
+  const totalBevestigd = events.filter(e => e.status === 'BEVESTIGD').length;
+  const totalGeannuleerd = events.filter(e => e.status === 'GEANNULEERD').length;
+  const conversionRate = (totalBevestigd + totalGeannuleerd) > 0 
+    ? Math.round((totalBevestigd / (totalBevestigd + totalGeannuleerd)) * 100) 
+    : 0;
+
+  // 2. Prognose (Toekomst) berekenen
+  let progTotaal = 0, progHoreca = 0, progOverig = 0;
+  futureEvents.forEach(e => {
+    if (!includeOpties && e.status === 'OPTIE') return;
+    const fins = calculateEventFinancials(e);
+    progTotaal += fins.offerteTotaal;
+    progHoreca += fins.offerteHoreca;
+    progOverig += fins.offerteOverig;
+  });
+
+  // 3. Historie Analyse (Verleden - Offerte vs Realiteit)
+  let histOfferteTotaal = 0, histFactuurTotaal = 0;
+  pastEvents.forEach(e => {
+    const fins = calculateEventFinancials(e);
+    histOfferteTotaal += fins.offerteTotaal;
+    histFactuurTotaal += fins.factuurTotaal;
+  });
+  const histVerschil = histFactuurTotaal - histOfferteTotaal;
+  const histVerschilPerc = histOfferteTotaal > 0 ? (histVerschil / histOfferteTotaal) * 100 : 0;
+
+  // 4. Maand / Kwartaal groepering
+  const periodData = {};
+  events.filter(e => e.status !== 'GEANNULEERD' && e.datum).forEach(e => {
+    const month = e.datum.substring(0, 7); // YYYY-MM
+    if (!periodData[month]) periodData[month] = { count: 0, pax: 0, offerte: 0, factuur: 0 };
+    periodData[month].count++;
+    periodData[month].pax += (Number(e.briefing?.pax) || 0);
+    const fins = calculateEventFinancials(e);
+    periodData[month].offerte += fins.offerteTotaal;
+    periodData[month].factuur += fins.factuurTotaal;
+  });
+  const sortedMonths = Object.keys(periodData).sort();
+
+  return (
+    <div className="space-y-8 animate-in fade-in max-w-6xl mx-auto">
+      <div className="border-b pb-4 mb-6">
+        <h2 className="text-3xl font-black text-gray-800 flex items-center gap-3">
+          <TrendingUp className="text-green-600" size={32} /> Management & Financieel Dashboard
+        </h2>
+        <p className="text-gray-600 mt-1">Real-time inzicht in omzet, prognoses en conversie-ratio's van alle evenementen.</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        {/* BLOK 1: Conversie */}
+        <div className="bg-white rounded-xl shadow p-6 border-t-4 border-blue-500">
+          <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><PieChart size={20}/> Conversie Ratio</h3>
+          <div className="flex items-end gap-2 mb-6">
+            <span className="text-4xl font-black text-blue-600">{conversionRate}%</span>
+            <span className="text-gray-500 mb-1 font-medium">boeking</span>
+          </div>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between items-center"><span className="text-gray-500 font-medium">Totaal Aanvragen (Ooit):</span> <span className="font-bold">{totalCreated}</span></div>
+            <div className="flex justify-between items-center"><span className="text-yellow-600 font-medium">Momenteel in Optie:</span> <span className="font-bold">{totalOptie}</span></div>
+            <div className="flex justify-between items-center"><span className="text-green-600 font-medium">Definitief Bevestigd:</span> <span className="font-bold">{totalBevestigd}</span></div>
+            <div className="flex justify-between items-center"><span className="text-red-600 font-medium">Geannuleerd:</span> <span className="font-bold">{totalGeannuleerd}</span></div>
+          </div>
+        </div>
+
+        {/* BLOK 2: Toekomst Prognose */}
+        <div className="bg-white rounded-xl shadow p-6 border-t-4 border-green-500 lg:col-span-2">
+          <div className="flex justify-between items-start mb-4">
+            <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><Calendar size={20}/> Prognose Omzet (Toekomst)</h3>
+            <label className="flex items-center gap-2 text-sm font-semibold text-gray-600 cursor-pointer bg-gray-50 px-3 py-1.5 rounded border">
+              <input 
+                type="checkbox" 
+                checked={includeOpties} 
+                onChange={(e) => setIncludeOpties(e.target.checked)} 
+                className="w-4 h-4 text-green-600 focus:ring-green-500 rounded"
+              />
+              Inclusief 'OPTIE' events
+            </label>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-4 mt-6">
+            <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+              <p className="text-xs font-bold text-green-800 uppercase tracking-wider mb-1">Totale Omzet</p>
+              <p className="text-2xl font-black text-green-700">€ {progTotaal.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
+              <p className="text-xs font-bold text-orange-800 uppercase tracking-wider mb-1">Verwacht: Horeca</p>
+              <p className="text-xl font-bold text-orange-700">€ {progHoreca.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+            </div>
+            <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+              <p className="text-xs font-bold text-purple-800 uppercase tracking-wider mb-1">Verwacht: Faciliteiten</p>
+              <p className="text-xl font-bold text-purple-700">€ {progOverig.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 mt-4 italic">*Alle bedragen zijn inschattingen op basis van de raming/offerte (incl. BTW).</p>
+        </div>
+
+        {/* BLOK 3: Historische Analyse */}
+        <div className="bg-white rounded-xl shadow p-6 border-t-4 border-yellow-500 lg:col-span-3">
+          <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><BarChart2 size={20}/> Historische Analyse: Offerte vs. Realiteit</h3>
+          <div className="flex flex-col md:flex-row gap-6">
+            <div className="flex-1 space-y-4">
+              <p className="text-sm text-gray-600">
+                Door alle verleden evenementen op te tellen, zien we of de factuur in werkelijkheid (door nacalculatie op drank en meerwerk) hoger of lager uitvalt dan wat we aan de voorkant in de offerte raming hebben gezet.
+              </p>
+              <div className="flex gap-8">
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase">Totaal geoffreerd</p>
+                  <p className="text-lg font-bold text-gray-800">€ {histOfferteTotaal.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-gray-500 uppercase">Totaal gefactureerd</p>
+                  <p className="text-lg font-bold text-gray-800">€ {histFactuurTotaal.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</p>
+                </div>
+              </div>
+            </div>
+            <div className={`md:w-64 p-6 rounded-xl border flex flex-col items-center justify-center text-center ${histVerschil >= 0 ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+              <p className={`text-xs font-bold uppercase mb-1 ${histVerschil >= 0 ? 'text-green-700' : 'text-red-700'}`}>Gemiddeld Verschil</p>
+              <p className={`text-3xl font-black ${histVerschil >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {histVerschil > 0 ? '+' : ''}{histVerschilPerc.toFixed(1)}%
+              </p>
+              <p className={`text-sm mt-1 font-medium ${histVerschil >= 0 ? 'text-green-800' : 'text-red-800'}`}>
+                (€ {histVerschil.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})})
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* BLOK 4: Maand / Kwartaal Overzicht */}
+        <div className="bg-white rounded-xl shadow overflow-hidden lg:col-span-3">
+          <h3 className="font-bold text-lg text-gray-800 p-6 pb-4 border-b flex items-center gap-2 bg-gray-50">
+            <Clock size={20}/> Omzet & Volume per Maand
+          </h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-white border-b text-sm">
+                  <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider">Maand</th>
+                  <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider text-center">Events</th>
+                  <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider text-center">Gasten (PAX)</th>
+                  <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider text-right">Raming (Offerte)</th>
+                  <th className="p-4 font-semibold text-gray-500 uppercase tracking-wider text-right">Gerealiseerd (Factuur)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {sortedMonths.map(month => {
+                  const d = periodData[month];
+                  const isFuture = month > today.substring(0, 7);
+                  return (
+                    <tr key={month} className="hover:bg-gray-50 transition">
+                      <td className="p-4 font-bold text-gray-800">{month}</td>
+                      <td className="p-4 text-center font-medium text-gray-600">{d.count}</td>
+                      <td className="p-4 text-center font-medium text-gray-600">{d.pax}</td>
+                      <td className="p-4 text-right text-gray-600">€ {d.offerte.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                      <td className="p-4 text-right">
+                        {isFuture ? (
+                          <span className="text-gray-400 italic text-sm">N.v.t. (Toekomst)</span>
+                        ) : (
+                          <span className="font-bold text-gray-900">€ {d.factuur.toLocaleString('nl-NL', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+                {sortedMonths.length === 0 && (
+                  <tr><td colSpan="5" className="p-6 text-center text-gray-500 italic">Geen financiële data gevonden.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+
 // --- EVENT EDITOR (TABS MANAGER) ---
 function EventEditor({ event, onSave, onClose }) {
   const [activeTab, setActiveTab] = useState(TABS.BRIEFING);
@@ -580,8 +943,6 @@ function EventEditor({ event, onSave, onClose }) {
   const [isSaving, setIsSaving] = useState(false);
 
   // Alleen bij het allereerste openen (of wisselen van event) de data laden.
-  // We updaten formData NIET meer klakkeloos als 'event' veranderd, om te 
-  // voorkomen dat je eigen getypte letters verdwijnen na een auto-save!
   useEffect(() => { 
     if(formData.id !== event.id) {
         setFormData(event); 
@@ -612,7 +973,6 @@ function EventEditor({ event, onSave, onClose }) {
   const updateField = (path, value) => {
     setFormData(prev => {
       // DEEP CLONE: Essentieel voor geneste arrays en objecten zoals turflijst
-      // Hierdoor wordt iedere klik, hoe diep ook, altijd als wijziging herkend.
       const newData = JSON.parse(JSON.stringify(prev)); 
       
       const keys = path.split('.');
@@ -626,7 +986,6 @@ function EventEditor({ event, onSave, onClose }) {
     });
   };
 
-  // We gebruiken "items-start" zodat de linker menubalk niet uitrekt maar juist "sticky" kan worden
   return (
     <div className="bg-white rounded-lg shadow-lg flex flex-col md:flex-row items-start min-h-[80vh] print-wrapper">
       
@@ -1130,7 +1489,6 @@ function TabOfferte({ data, updateField }) {
       <div className="flex justify-between items-end border-b border-red-200 pb-2 mb-6 print-hidden">
         <h2 className="text-2xl font-bold text-red-800">Offerte & Raming</h2>
         <div className="flex gap-2">
-          {/* Mail knop verwijderd, zoals gevraagd */}
           <button 
             type="button" 
             onClick={() => {
