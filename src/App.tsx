@@ -9,7 +9,7 @@ import {
 
 // --- FIREBASE IMPORTS (CLOUD DATABASE & AUTH) ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot } from 'firebase/firestore';
 
 // --- FIREBASE INITIALIZATIE ---
@@ -164,6 +164,8 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
     try {
+      // Forceer Firebase om de sessie lokaal in de browser te onthouden
+      await setPersistence(auth, browserLocalPersistence);
       await signInWithEmailAndPassword(auth, loginEmail, loginPassword);
     } catch (error) {
       console.error("Login fout:", error);
@@ -331,6 +333,7 @@ export default function App() {
               <input 
                 type="email" 
                 required
+                autoComplete="email"
                 className="w-full border border-gray-300 rounded p-2.5 outline-none focus:border-red-700 focus:ring-1 focus:ring-red-700 transition"
                 value={loginEmail}
                 onChange={(e) => setLoginEmail(e.target.value)}
@@ -342,6 +345,7 @@ export default function App() {
               <input 
                 type="password" 
                 required
+                autoComplete="current-password"
                 className="w-full border border-gray-300 rounded p-2.5 outline-none focus:border-red-700 focus:ring-1 focus:ring-red-700 transition"
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
